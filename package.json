@@ -1,5 +1,8 @@
 {
   "license": "ISC",
+  "engines": {
+    "node": ">=20.18.0"
+  },
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
