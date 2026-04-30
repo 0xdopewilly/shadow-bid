@@ -54,7 +54,7 @@ function readKpJson(path: string): anchor.web3.Keypair {
 
 describe("shadow_bid (Arcium blind auction)", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
-  const program = anchor.workspace.shadowBid as Program<ShadowBid>;
+  const program = anchor.workspace.ShadowBid as Program<ShadowBid>;
   const provider = anchor.getProvider() as anchor.AnchorProvider;
 
   type Event = anchor.IdlEvents<(typeof program)["idl"]>;
