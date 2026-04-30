@@ -6,10 +6,12 @@ const COMP_DEF_OFFSET_INIT_AUCTION_STATE: u32 = comp_def_offset("init_auction_st
 const COMP_DEF_OFFSET_PLACE_BID: u32 = comp_def_offset("place_bid");
 
 /// Byte offset of `encrypted_state` within `Auction` account data (after 8-byte discriminator).
+/// `Auction`: 8 (disc) + bump + authority + bid_count + state_nonce, then ciphertext blob.
 const ENCRYPTED_STATE_OFFSET: u32 = 61;
-const ENCRYPTED_STATE_SIZE: u32 = 33 * 32;
+/// MXE state is 3 scalars: u64 + u128 + u128 (`SerializedSolanaPublicKey`).
+const ENCRYPTED_STATE_SIZE: u32 = 3 * 32;
 
-declare_id!("CHFR2eD8dmZ5NM7UbwM7nWFVTfWPpdtKfv6H4Bgtha3e");
+declare_id!("EvyVpkAWdKABJAZZ73YkMwGiVS3QJMEJ7vHvKh6FYuBt");
 
 #[arcium_program]
 pub mod shadow_bid {
@@ -31,7 +33,7 @@ pub mod shadow_bid {
         auction.authority = ctx.accounts.authority.key();
         auction.bid_count = 0;
         auction.state_nonce = 0;
-        auction.encrypted_state = [[0u8; 32]; 33];
+        auction.encrypted_state = [[0u8; 32]; 3];
 
         ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
@@ -84,30 +86,26 @@ pub mod shadow_bid {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn place_bid(
         ctx: Context<PlaceBid>,
         computation_offset: u64,
         encrypted_bid: [u8; 32],
-        encrypted_bidder_pubkey: [[u8; 32]; 32],
+        encrypted_bidder_lo: [u8; 32],
+        encrypted_bidder_hi: [u8; 32],
         bidder_x25519_pubkey: [u8; 32],
         nonce_bid: u128,
         nonce_bidder: u128,
     ) -> Result<()> {
         ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
-        let mut builder = ArgBuilder::new()
+        let args = ArgBuilder::new()
             .x25519_pubkey(bidder_x25519_pubkey)
             .plaintext_u128(nonce_bid)
             .encrypted_u64(encrypted_bid)
             .x25519_pubkey(bidder_x25519_pubkey)
-            .plaintext_u128(nonce_bidder);
-
-        for ct in encrypted_bidder_pubkey {
-            builder = builder.encrypted_u8(ct);
-        }
-
-        let args = builder
+            .plaintext_u128(nonce_bidder)
+            .encrypted_u128(encrypted_bidder_lo)
+            .encrypted_u128(encrypted_bidder_hi)
             .plaintext_u128(ctx.accounts.auction.state_nonce)
             .account(
                 ctx.accounts.auction.key(),
@@ -173,7 +171,7 @@ pub struct Auction {
     pub authority: Pubkey,
     pub bid_count: u32,
     pub state_nonce: u128,
-    pub encrypted_state: [[u8; 32]; 33],
+    pub encrypted_state: [[u8; 32]; 3],
 }
 
 #[queue_computation_accounts("init_auction_state", authority)]

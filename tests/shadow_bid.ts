@@ -52,6 +52,13 @@ function readKpJson(path: string): anchor.web3.Keypair {
   return anchor.web3.Keypair.fromSecretKey(Uint8Array.from(secret));
 }
 
+/** Split 32-byte pubkey into two u128 limbs (little-endian), matching Arcis `SerializedSolanaPublicKey`. */
+function splitPubkeyToU128s(pubkey: Uint8Array): { lo: bigint; hi: bigint } {
+  const loBytes = pubkey.slice(0, 16);
+  const hiBytes = pubkey.slice(16, 32);
+  return { lo: deserializeLE(loBytes), hi: deserializeLE(hiBytes) };
+}
+
 describe("shadow_bid (Arcium blind auction)", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
   const program = anchor.workspace.ShadowBid as Program<ShadowBid>;
@@ -204,25 +211,24 @@ describe("shadow_bid (Arcium blind auction)", () => {
     const cipher = new RescueCipher(sharedSecret);
 
     const bidAmount = BigInt(42);
-    const bidderPlaintext = Array.from(owner.publicKey.toBytes()).map((b) =>
-      BigInt(b)
+    const { lo: bidderLo, hi: bidderHi } = splitPubkeyToU128s(
+      owner.publicKey.toBytes()
     );
 
     const nonceBid = randomBytes(16);
     const nonceBidder = randomBytes(16);
     const ctBid = cipher.encrypt([bidAmount], nonceBid);
-    const ctBidder = cipher.encrypt(bidderPlaintext, nonceBidder);
+    const ctBidder = cipher.encrypt([bidderLo, bidderHi], nonceBidder);
 
     const bidComputationOffset = new anchor.BN(randomBytes(8), "hex");
     const bidPlacedPromise = awaitEvent("bidPlacedEvent", auctionPda);
-
-    const encryptedBidder32: number[][] = ctBidder.map((x) => Array.from(x));
 
     await program.methods
       .placeBid(
         bidComputationOffset,
         Array.from(ctBid[0]),
-        encryptedBidder32,
+        Array.from(ctBidder[0]),
+        Array.from(ctBidder[1]),
         Array.from(ephemeralPubkey),
         new anchor.BN(deserializeLE(nonceBid).toString()),
         new anchor.BN(deserializeLE(nonceBidder).toString())
