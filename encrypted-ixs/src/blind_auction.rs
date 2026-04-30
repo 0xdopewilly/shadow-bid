@@ -4,7 +4,6 @@ use arcis::*;
 mod circuits {
     use arcis::*;
 
-    #[derive(Copy, Clone)]
     pub struct AuctionState {
         pub highest_bid: u64,
         pub highest_bidder: SerializedSolanaPublicKey,
