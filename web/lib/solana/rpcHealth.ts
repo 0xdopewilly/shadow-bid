@@ -69,6 +69,16 @@ export function humanizeSolanaTxError(message: string, rpcEndpoint: string): str
     }
     return lines.join("\n");
   }
+  if (/ProgramAccountNotFound/i.test(message)) {
+    const lines = [
+      "Solana does not see the Shadow Bid program bytecode at NEXT_PUBLIC_SHADOW_BID_PROGRAM_ID on this cluster.",
+      "",
+      `RPC in use: ${rpcEndpoint}`,
+      "",
+      "Fix: deploy shadow_bid to this cluster with the same declare_id as web/lib/idl/shadow_bid.json, paste that pubkey into NEXT_PUBLIC_SHADOW_BID_PROGRAM_ID in Vercel, redeploy the site—or point the app at the cluster where your program actually lives.",
+    ];
+    return lines.join("\n");
+  }
   if (/not confirmed in [\d.]+ second/i.test(message)) {
     return [
       message.trim(),
