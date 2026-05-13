@@ -207,7 +207,7 @@ export function RevealModal({
                 transition={{ delay: 0.6 }}
                 className="flex items-center justify-between rounded-xl border border-white/10 bg-black/40 px-3 py-2"
               >
-                <span className="text-slate-400">Public bid count</span>
+                <span className="text-slate-400">Confirmed sealed bids</span>
                 <span className="font-mono text-violet-200">
                   {bidCount ?? "—"}
                 </span>
@@ -239,6 +239,11 @@ export function RevealModal({
                 </span>
               </motion.div>
             </div>
+
+            <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
+              Count stays at <span className="font-mono text-slate-400">0</span> until the first bid&apos;s
+              MXE computation finishes — not when the wallet-only transaction lands.
+            </p>
 
             {!revealed && isAuthority && onTriggerReveal ? (
               <motion.button

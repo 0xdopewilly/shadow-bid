@@ -180,15 +180,9 @@ pub mod shadow_bid {
         let auction_key = ctx.accounts.auction.key();
         let auction = &mut ctx.accounts.auction;
         require!(!auction.revealed, ErrorCode::AuctionAlreadyRevealed);
-        // Same bidding window as `place_bid`: do not persist a bid whose
-        // computation settles after `bidding_ends_at`.
-        if auction.bidding_ends_at != 0 {
-            let now = Clock::get()?.unix_timestamp;
-            require!(
-                now < auction.bidding_ends_at,
-                ErrorCode::AuctionEnded
-            );
-        }
+        // Do not re-check `bidding_ends_at` here. `place_bid` already rejects queueing
+        // after the deadline; MPC finalization can lag wall-clock by minutes. Rejecting
+        // this callback would strand wallet-confirmed txs with `bid_count` stuck at 0.
         auction.encrypted_state = o.ciphertexts;
         auction.state_nonce = o.nonce;
         auction.bid_count = auction

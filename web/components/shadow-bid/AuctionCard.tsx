@@ -103,8 +103,13 @@ export function AuctionCard({ auction, isMine, showCta = true }: Props) {
             <code className="text-slate-400">{shortPk(auction.authority.toBase58())}</code>
           </p>
         </div>
-        <div className="text-right">
-          <div className="text-[10px] uppercase tracking-widest text-slate-500">bids</div>
+        <div
+          className="text-right"
+          title="Increments after Arcium MXE finalizes each sealed bid (short delay past wallet confirmation)."
+        >
+          <div className="text-[10px] uppercase tracking-widest text-slate-500">
+            bids on-chain
+          </div>
           <div className="font-mono text-2xl text-violet-100">{auction.bidCount}</div>
         </div>
       </div>

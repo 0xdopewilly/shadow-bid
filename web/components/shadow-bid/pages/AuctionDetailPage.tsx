@@ -7,6 +7,7 @@ import { RevealModal } from "@/components/shadow-bid/RevealModal";
 import { useShadowBid } from "@/components/shadow-bid/ShadowBidContext";
 import { SafeRemoteImage } from "@/components/shadow-bid/SafeRemoteImage";
 import {
+  coerceAnchorU32,
   fetchAuctionAccount,
   listingImageSrc,
   placeBidFlow,
@@ -191,9 +192,10 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
       subs.push(
         program.addEventListener(
           "bidPlacedEvent",
-          (ev: { auction: PublicKey; bidCount: number }) => {
+          (ev: { auction: PublicKey; bidCount: unknown }) => {
             if (ev.auction.equals(auctionKey)) {
-              pushFeed(`Anonymous bidder placed sealed bid (#${ev.bidCount}).`, true, 4000);
+              const n = coerceAnchorU32(ev.bidCount);
+              pushFeed(`Anonymous bidder placed sealed bid (#${n}).`, true, 4000);
               void refresh();
             }
           }
@@ -524,7 +526,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
                 <>
                   <span>·</span>
                   <span className="text-violet-300/90">
-                    sealed bids: {snapshot.bidCount}
+                    MXE-confirmed sealed bids: {snapshot.bidCount}
                   </span>
                 </>
               ) : null}
@@ -652,7 +654,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
         <div className="flex flex-col gap-6">
           <div className="grid grid-cols-2 gap-3">
             <SnapshotStat
-              label="Sealed bids"
+              label="Confirmed sealed bids"
               value={snapshot ? `${snapshot.bidCount}` : "—"}
             />
             <SnapshotStat
@@ -692,6 +694,11 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
               }
             />
           </div>
+          <p className="text-[10px] leading-snug text-slate-500">
+            This counter tracks finalized bids only — your wallet tx confirms first; the Arcium
+            callback increments <span className="font-mono text-slate-400">bid_count</span> a few
+            seconds later (refresh happens automatically).
+          </p>
 
           <div className="rounded-2xl border border-white/10 bg-black/30 p-5 backdrop-blur-md">
             <div className="mb-3 flex items-center gap-2">

@@ -148,7 +148,11 @@ export function HomePage() {
 
             <div className="mt-8 grid grid-cols-3 gap-3 max-w-md">
               <Stat label="Live auctions" value={liveAuctions} />
-              <Stat label="Total bids" value={totalBids} />
+              <Stat
+                label="Total bids"
+                value={totalBids}
+                hint="Sum of Arcium-finalized sealed bids across listings (wallet confirms first; counter follows)."
+              />
               <Stat label="Settled" value={revealedAuctions} />
             </div>
           </div>
@@ -246,9 +250,20 @@ export function HomePage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: number;
+  hint?: string;
+}) {
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+    <div
+      className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3"
+      title={hint}
+    >
       <div className="font-mono text-2xl text-violet-100">{value}</div>
       <div className="text-[10px] uppercase tracking-widest text-slate-500">{label}</div>
     </div>

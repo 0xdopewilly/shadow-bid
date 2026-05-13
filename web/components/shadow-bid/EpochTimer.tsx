@@ -1,7 +1,7 @@
 "use client";
 
 import { Clock, Loader2, Lock, Timer } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 interface Props {
   /** Unix seconds. 0 / null = no deadline set on-chain. */
@@ -52,7 +52,9 @@ export function EpochTimer({
   const [sliderVal, setSliderVal] = useState(60); // 60 minutes default
   const [remaining, setRemaining] = useState<number>(0);
   const [busy, setBusy] = useState(false);
-  const [endedFiredFor, setEndedFiredFor] = useState<number | null>(null);
+  /** Dedupe `onEnded` when the window is already expired (incl. React Strict Mode remounts). */
+  const lastObservedEndMs = useRef<number | null>(null);
+  const firedEndedForEndMs = useRef<number | null>(null);
 
   const min = unit === "m" ? MIN_MINUTES : MIN_HOURS;
   const max = unit === "m" ? MAX_MINUTES : MAX_HOURS;
@@ -77,23 +79,37 @@ export function EpochTimer({
   }, [unit, sliderVal]);
 
   useEffect(() => {
+    if (lastObservedEndMs.current !== endMs) {
+      lastObservedEndMs.current = endMs;
+      firedEndedForEndMs.current = null;
+    }
+  }, [endMs]);
+
+  useEffect(() => {
     if (endMs == null) {
       setRemaining(0);
       return;
     }
+
+    let intervalId: ReturnType<typeof setInterval>;
+
     const tick = () => {
       const r = endMs - Date.now();
       setRemaining(r);
-      if (r <= 0 && endedFiredFor !== endMs) {
-        setEndedFiredFor(endMs);
-        onEnded?.();
-        clearInterval(id);
+      if (r <= 0) {
+        clearInterval(intervalId);
+        if (firedEndedForEndMs.current !== endMs) {
+          firedEndedForEndMs.current = endMs;
+          onEnded?.();
+        }
       }
     };
+
+    intervalId = setInterval(tick, 1000);
     tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [endMs, onEnded, endedFiredFor]);
+
+    return () => clearInterval(intervalId);
+  }, [endMs, onEnded]);
 
   const applyDeadline = useCallback(async () => {
     if (!onSetDeadline) return;

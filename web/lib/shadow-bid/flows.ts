@@ -30,6 +30,37 @@ import { type Connection, Keypair, PublicKey } from "@solana/web3.js";
 
 export type ShadowBidProgram = Program<ShadowBid>;
 
+/**
+ * Anchor decoders sometimes surface `u32` fields as `number`, sometimes as `BN`.
+ * Normalize so UI math / React rendering never sees a bare BN object.
+ */
+export function coerceAnchorU32(raw: unknown): number {
+  if (typeof raw === "number") return raw >>> 0;
+  if (typeof raw === "bigint") {
+    const n = Number(raw);
+    return Number.isFinite(n) ? n >>> 0 : 0;
+  }
+  if (typeof raw === "string" && raw.trim() !== "") {
+    const n = Number(raw);
+    return Number.isFinite(n) ? n >>> 0 : 0;
+  }
+  if (raw != null && typeof raw === "object") {
+    const obj = raw as { toNumber?: () => number; toString?: () => string };
+    if (typeof obj.toNumber === "function") {
+      try {
+        return obj.toNumber() >>> 0;
+      } catch {
+        /* fall through */
+      }
+    }
+    if (typeof obj.toString === "function") {
+      const n = Number(obj.toString());
+      return Number.isFinite(n) ? n >>> 0 : 0;
+    }
+  }
+  return 0;
+}
+
 export function getShadowBidProgram(
   provider: anchor.AnchorProvider
 ): ShadowBidProgram {
@@ -620,7 +651,7 @@ export async function fetchAllAuctions(
   return accs.map(({ publicKey, account }) => ({
     pda: publicKey,
     authority: account.authority,
-    bidCount: account.bidCount,
+    bidCount: coerceAnchorU32(account.bidCount as unknown),
     revealed: account.revealed,
     winner: account.winner,
     winningBid: account.winningBid.toString(),
@@ -643,7 +674,7 @@ export async function fetchAuctionAccount(
       flat.set(Uint8Array.from(chunk), i * 32);
     }
     return {
-      bidCount: acc.bidCount,
+      bidCount: coerceAnchorU32(acc.bidCount as unknown),
       stateNonce: acc.stateNonce.toString(),
       authority: acc.authority,
       encryptedStateBytes: flat,
