@@ -662,6 +662,26 @@ export async function fetchAllAuctions(
   }));
 }
 
+/**
+ * Poll until `bid_count` exceeds `below` or `timeoutMs` elapses (Arcium MXC finalization).
+ */
+export async function waitForAuctionBidCountAbove(
+  program: ShadowBidProgram,
+  auction: PublicKey,
+  below: number,
+  opts?: { timeoutMs?: number; pollMs?: number }
+): Promise<number | null> {
+  const timeoutMs = opts?.timeoutMs ?? 120_000;
+  const pollMs = opts?.pollMs ?? 2500;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const data = await fetchAuctionAccount(program, auction);
+    if (data != null && data.bidCount > below) return data.bidCount;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  return null;
+}
+
 export async function fetchAuctionAccount(
   program: ShadowBidProgram,
   auction: PublicKey

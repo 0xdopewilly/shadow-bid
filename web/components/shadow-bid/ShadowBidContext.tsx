@@ -187,8 +187,7 @@ export function ShadowBidProvider({ children }: { children: ReactNode }) {
 
       const isArciumAuth =
         /InvalidAuthority/i.test(msg) ||
-        /The given authority is invalid/i.test(msg) ||
-        /\b6000\b/.test(msg);
+        /The given authority is invalid/i.test(msg);
       if (isArciumAuth) {
         msg += isLocalSolanaRpc(connection.rpcEndpoint)
           ? "\n\nMXE circuit initialization must be signed by the MXE authority keypair for this sandbox (typically ~/.config/solana/id.json). Run `yarn init:mxe-circuits` from the repository root, then use your browser wallet for create, bid, and reveal."
@@ -215,6 +214,22 @@ export function ShadowBidProvider({ children }: { children: ReactNode }) {
       clearInterval(t);
     };
   }, [connection]);
+
+  /** Wrong offset ⇒ wrong MXC PDAs; bids never finalize and reveal appears stuck */
+  const warnedArciumCluster = useRef(false);
+  useEffect(() => {
+    if (warnedArciumCluster.current) return;
+    if (rpcReachable !== true) return;
+    if (clusterOffset !== 0) return;
+    if (isLocalSolanaRpc(connection.rpcEndpoint)) return;
+    warnedArciumCluster.current = true;
+    pushToast({
+      kind: "warn",
+      title: "Arcium cluster offset is 0",
+      body:
+        "Sealed bids and reveal talk to MXC via computation PDAs. If you deployed with `arcium deploy -o 456`, set NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET=456 in web/.env.local (and Vercel), rebuild, reload — otherwise bid_count stays 0 and reveal never settles.",
+    });
+  }, [clusterOffset, connection.rpcEndpoint, pushToast, rpcReachable]);
 
   // SOL balance
   useEffect(() => {

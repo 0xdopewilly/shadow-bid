@@ -86,5 +86,21 @@ export function humanizeSolanaTxError(message: string, rpcEndpoint: string): str
       "Confirmation exceeded the client wait window; the transaction may still land. Verify the signature in a Solana explorer for this cluster before retrying.",
     ].join("\n");
   }
+  if (/InvalidRevealOutput|6011|Reveal output inconsistent/i.test(message)) {
+    return [
+      message.trim(),
+      "",
+      'On-chain sealed bid counter is zero but the MPC output was not an "empty auction" (0 SOL + no winner). That usually means the encrypted state never recorded a finalized bid.',
+      "",
+      'Also verify NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET matches your `arcium deploy -o …` value (e.g. 456). Wrong offset ⇒ bid_count never increments and reveals look like they “do nothing”.',
+    ].join("\n");
+  }
+  if (/AbortedComputation|The computation was aborted|\b6000\b/i.test(message)) {
+    return [
+      message.trim(),
+      "",
+      "The Arcium computation did not verify (callback aborted). Typical causes: wrong Arcium cluster offset vs deploy, uninitialized circuits (`yarn init:mxe-circuits`), or Devnet MXC lag—retry after confirming env matches your arcium deploy flags.",
+    ].join("\n");
+  }
   return message;
 }

@@ -28,6 +28,8 @@ interface Props {
   triggering?: boolean;
   /** Whether MXE is ready (so the trigger button can enable). */
   mxeReady?: boolean;
+  /** True when NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET is 0 against a hosted RPC (almost always wrong vs deploy `-o`). */
+  arciumClusterMisconfigured?: boolean;
 }
 
 function shortPk(b58: string): string {
@@ -54,6 +56,7 @@ export function RevealModal({
   onTriggerReveal,
   triggering,
   mxeReady = true,
+  arciumClusterMisconfigured = false,
 }: Props) {
   useEffect(() => {
     if (!open) return;
@@ -149,6 +152,20 @@ export function RevealModal({
             >
               {revealed ? "The veil shatters." : "Sealed — for now."}
             </motion.h3>
+
+            {arciumClusterMisconfigured ? (
+              <motion.p
+                initial={{ y: 8, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.46, duration: 0.45 }}
+                className="mt-3 rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-[11px] leading-snug text-amber-50/95"
+              >
+                <strong className="font-semibold text-amber-100">Misconfiguration:</strong> this build uses{" "}
+                <code className="rounded bg-black/40 px-1">NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET=0</code> against a hosted RPC —
+                MXC PDAs won&apos;t match <code className="font-mono">arcium deploy -o …</code>. Align env (e.g.{" "}
+                <span className="font-mono">456</span>) and redeploy the site.
+              </motion.p>
+            ) : null}
 
             <motion.p
               initial={{ y: 8, opacity: 0 }}

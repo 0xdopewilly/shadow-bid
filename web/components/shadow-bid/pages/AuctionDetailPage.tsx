@@ -13,6 +13,7 @@ import {
   placeBidFlow,
   revealWinnerFlow,
   setAuctionDeadlineFlow,
+  waitForAuctionBidCountAbove,
 } from "@/lib/shadow-bid/flows";
 import { lamportsToSolDisplayWithSuffix } from "@/lib/shadow-bid/lamportsDisplay";
 import { isLocalSolanaRpc } from "@/lib/solana/cluster";
@@ -202,16 +203,17 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
             totalBids: number;
           }) => {
             if (ev.auction.equals(auctionKey)) {
+              const total = coerceAnchorU32(ev.totalBids as unknown);
               pushFeed(
-                `Winner revealed · ${truncateMid(ev.winner.toBase58(), 4, 4)} took it`,
+                `Winner revealed · ${truncateMid(ev.winner.toBase58(), 4, 4)} (${total} sealed bids recorded)`,
                 true
               );
               pushToast({
                 kind: "info",
                 title: "Winner revealed",
-                body: `${truncateMid(ev.winner.toBase58(), 4, 4)} won ${(
-                  Number(ev.winningBid.toString()) / 1e9
-                ).toLocaleString(undefined, { maximumFractionDigits: 9 })} SOL.`,
+                body: `${truncateMid(ev.winner.toBase58(), 4, 4)} · ${lamportsToSolDisplayWithSuffix(
+                  ev.winningBid.toString()
+                )} · ${total} MXE-finalized bids.`,
               });
               setRevealOpen(true);
               void refresh();
@@ -226,7 +228,15 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
     return () => {
       for (const id of subs) void program.removeEventListener(id);
     };
-  }, [program, auctionKey, pushFeed, pushToast, refresh, refreshAllAuctions, rpcReachable]);
+  }, [
+    program,
+    auctionKey,
+    pushFeed,
+    pushToast,
+    refresh,
+    refreshAllAuctions,
+    rpcReachable,
+  ]);
 
   useEffect(() => {
     const end = snapshot?.biddingEndsAt;
@@ -245,6 +255,12 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
     return publicKey.equals(snapshot.authority);
   }, [publicKey, snapshot]);
 
+  /** MXC PDAs derive from offset; mismatch with deploy makes bid_count frozen at 0 */
+  const arciumClusterMisconfigured = useMemo(
+    () => clusterOffset === 0 && !isLocalSolanaRpc(rpcEndpoint),
+    [clusterOffset, rpcEndpoint]
+  );
+
   const myHighest = useMemo(() => {
     if (!walletPk) return null;
     return highestUserBidLamports(walletPk, auctionPda);
@@ -256,6 +272,13 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
     if (!mxePub) throw new Error("MXE key not ready");
     const trimmed = bidInput.trim();
     const lamports = solToLamports(trimmed);
+    let countBefore = 0;
+    try {
+      const cur = await fetchAuctionAccount(program, auctionKey);
+      countBefore = cur?.bidCount ?? 0;
+    } catch {
+      countBefore = snapshot?.bidCount ?? 0;
+    }
     setBusy("Encrypting & sending sealed bid…");
     try {
       const { txSig, computationOffset } = await placeBidFlow(
@@ -278,10 +301,31 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
       pushFeed(`Sealed bid submitted · tx ${truncateMid(txSig, 6, 6)}`, true);
       pushToast({
         kind: "info",
-        title: "Sealed bid sent",
-        body: "Encrypted in your browser. The MXE compares without decrypting.",
+        title: "Wallet confirmed — waiting for MXC",
+        body: "Watching on-chain bid_count until Arcium finalizes…",
       });
       setBidInput("");
+      setBusy("Awaiting MXC finalization (up to ~2 min)…");
+      const raised = await waitForAuctionBidCountAbove(
+        program,
+        auctionKey,
+        countBefore
+      );
+      if (raised != null) {
+        pushToast({
+          kind: "info",
+          title: "Sealed bid finalized on-chain",
+          body: `MXE bumped bid_count to ${raised}.`,
+        });
+        pushFeed(`Sealed bid #${raised} confirmed by MXE.`, true);
+      } else {
+        pushToast({
+          kind: "warn",
+          title: "bid_count did not increase",
+          body:
+            "Your transaction may still be settling, or MXC cannot reach this auction. Confirm NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET matches `arcium deploy -o …` (e.g. 456), then check Solana Explorer for your wallet txs.",
+        });
+      }
       await refresh();
     } finally {
       setBusy(null);
@@ -295,6 +339,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
     mxePub,
     clusterOffset,
     bidInput,
+    snapshot?.bidCount,
     pushFeed,
     pushToast,
     refresh,
@@ -338,12 +383,37 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
         auctionKey
       );
       pushFeed(`reveal_winner finalized · tx ${truncateMid(txSig, 6, 6)}`, true);
+      pushToast({
+        kind: "info",
+        title: "Reveal finalized",
+        body: `Winner + amount written on-chain (${truncateMid(txSig, 6, 6)}…). Refreshing.`,
+      });
       await refresh();
+      await new Promise((r) => setTimeout(r, 1500));
+      await refresh();
+      const check = await fetchAuctionAccount(program, auctionKey);
+      if (check && !check.revealed) {
+        pushToast({
+          kind: "warn",
+          title: "Auction still sealed on RPC",
+          body:
+            "The reveal tx finalized but accounts still show sealed — RPC lag or a failed MXC callback. Check Solana Explorer and cluster offset env.",
+        });
+      }
     } finally {
       setBusy(null);
       setRevealing(false);
     }
-  }, [program, provider, publicKey, auctionKey, clusterOffset, pushFeed, refresh]);
+  }, [
+    program,
+    provider,
+    publicKey,
+    auctionKey,
+    clusterOffset,
+    pushFeed,
+    pushToast,
+    refresh,
+  ]);
 
   if (!auctionKey) {
     return (
@@ -376,6 +446,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
         winningBidLamports={snapshot?.revealed ? snapshot.winningBidLamports : null}
         mxeReady={!!mxePub && rpcReachable === true}
         triggering={revealing}
+        arciumClusterMisconfigured={arciumClusterMisconfigured}
         onTriggerReveal={() => void onReveal().catch(reportError)}
       />
 
@@ -512,7 +583,10 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
             />
             <p className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
               <Coins className="h-3 w-3 opacity-60" />
-              Sealed state — only the MXE can read this row
+              No one sees the{" "}
+              <strong className="font-medium text-violet-200/95">global high bid</strong> until the
+              seller reveals — only the running{" "}
+              <span className="font-mono text-slate-400">bid_count</span>. Sealed row:
               {snapshot ? (
                 <>
                   <span>·</span>
@@ -571,6 +645,17 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
                 Place your sealed bid
               </h2>
             </div>
+
+            {arciumClusterMisconfigured ? (
+              <div className="mb-4 rounded-xl border border-amber-400/35 bg-amber-500/10 px-3 py-2 text-[11px] leading-snug text-amber-100/95">
+                <strong className="font-semibold">Config:</strong>{" "}
+                <code className="rounded bg-black/35 px-1">NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET</code> is{" "}
+                <code className="font-mono text-amber-200">0</code> but Arcium Devnet deployments use{" "}
+                <code className="font-mono text-amber-200">arcium deploy -o …</code> (e.g.{" "}
+                <span className="font-mono">456</span>). Set it to match, rebuild — otherwise bids/reveal silently fail to update{" "}
+                <code className="font-mono text-amber-200/90">bid_count</code>.
+              </div>
+            ) : null}
 
             {!connected ? (
               <button
@@ -667,9 +752,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
               mono
               value={
                 myHighest != null
-                  ? `${(Number(myHighest) / 1e9).toLocaleString(undefined, {
-                      maximumFractionDigits: 9,
-                    })} SOL`
+                  ? lamportsToSolDisplayWithSuffix(myHighest)
                   : "—"
               }
             />
