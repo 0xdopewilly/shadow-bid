@@ -5,8 +5,8 @@
  * is your Solana CLI default (~/.config/solana/id.json), NOT your Phantom
  * wallet unless you imported that exact key into Phantom.
  *
- * Usage (localnet / Docker running, validator on 8899):
- *   yarn init:mxe-circuits
+ * Re-running is safe: if a comp-def account already exists (e.g. init landed
+ * before upload hit RPC 429), that step is skipped and `.arcis` upload still runs.
  *
  * Env:
  *   SOLANA_RPC_URL        (default http://127.0.0.1:8899)
@@ -91,7 +91,10 @@ async function main() {
     )[0];
 
     process.stdout.write(`→ ${circuitName} (on-chain init)… `);
-    if (circuitName === "init_auction_state") {
+    const compDefAcct = await connection.getAccountInfo(compDefPda, "confirmed");
+    if (compDefAcct !== null) {
+      console.log("skipped (comp def already exists — safe after a partial run)");
+    } else if (circuitName === "init_auction_state") {
       await program.methods
         .initAuctionStateCompDef()
         .accounts({
@@ -101,6 +104,7 @@ async function main() {
           addressLookupTable: lutAddress,
         })
         .rpc(rpcOpts);
+      console.log("ok");
     } else if (circuitName === "place_bid") {
       await program.methods
         .initPlaceBidCompDef()
@@ -111,6 +115,7 @@ async function main() {
           addressLookupTable: lutAddress,
         })
         .rpc(rpcOpts);
+      console.log("ok");
     } else {
       await program.methods
         .initRevealWinnerCompDef()
@@ -121,8 +126,8 @@ async function main() {
           addressLookupTable: lutAddress,
         })
         .rpc(rpcOpts);
+      console.log("ok");
     }
-    console.log("ok");
 
     const arcisPath = path.join(repoRoot, `build/${circuitName}.arcis`);
     if (!fs.existsSync(arcisPath)) {
