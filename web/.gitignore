@@ -1,0 +1,9 @@
+node_modules
+.env.local
+.env*.local
+.next
+out
+*.tsbuildinfo
+next-env.d.ts
+
+# Commit `public/circuits/*.arcis` after `arcium build && yarn copy:artifacts` so Vercel/hosted builds serve circuits.

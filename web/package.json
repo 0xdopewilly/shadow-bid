@@ -1,0 +1,43 @@
+{
+  "name": "shadow-bid-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "clean": "rm -rf .next",
+    "dev": "next dev",
+    "dev:poll": "WATCHPACK_POLLING=true next dev",
+    "dev:full": "bash ../scripts/dev.sh",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "copy:artifacts": "mkdir -p lib/idl public/circuits types && (cp -f ../../target/idl/shadow_bid.json lib/idl/ 2>/dev/null || cp -f ../target/idl/shadow_bid.json lib/idl/) && (cp -f ../../target/types/shadow_bid.ts types/ 2>/dev/null || cp -f ../target/types/shadow_bid.ts types/) && (cp -f ../../build/*.arcis public/circuits/ 2>/dev/null || cp -f ../build/*.arcis public/circuits/ 2>/dev/null || true)"
+  },
+  "dependencies": {
+    "@arcium-hq/client": "0.9.6",
+    "@coral-xyz/anchor": "^0.32.1",
+    "@solana/wallet-adapter-base": "^0.9.23",
+    "@solana/wallet-adapter-react": "^0.15.35",
+    "@solana/wallet-adapter-react-ui": "^0.9.35",
+    "@solana/wallet-adapter-phantom": "^0.9.24",
+    "@solana/wallet-adapter-solflare": "^0.6.28",
+    "@solana/web3.js": "^1.95.8",
+    "bn.js": "^5.2.1",
+    "buffer": "^6.0.3",
+    "framer-motion": "^11.15.0",
+    "lucide-react": "^0.468.0",
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.16.0",
+    "eslint-config-next": "^15.1.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "typescript": "^5.7.3"
+  }
+}

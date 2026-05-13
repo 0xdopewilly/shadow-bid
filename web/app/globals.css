@@ -1,0 +1,161 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --glass-bg: rgba(255, 255, 255, 0.04);
+  --glass-border: rgba(139, 92, 246, 0.22);
+  --glass-highlight: rgba(255, 255, 255, 0.12);
+  --neon-core: rgba(167, 139, 250, 0.95);
+  --neon-edge: rgba(192, 38, 211, 0.65);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply antialiased text-slate-100;
+  min-height: 100vh;
+  background-color: #020006;
+  background-image:
+    radial-gradient(ellipse 120% 80% at 50% -30%, rgba(76, 29, 149, 0.45), transparent 55%),
+    radial-gradient(ellipse 90% 60% at 100% 50%, rgba(30, 27, 75, 0.55), transparent 50%),
+    radial-gradient(ellipse 80% 50% at 0% 80%, rgba(59, 7, 100, 0.35), transparent 45%),
+    linear-gradient(180deg, #0b0420 0%, #030008 35%, #000000 100%);
+  background-attachment: fixed;
+}
+
+@layer utilities {
+  .glass-panel {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.08) 0%,
+      rgba(255, 255, 255, 0.02) 50%,
+      rgba(139, 92, 246, 0.06) 100%
+    );
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 0 60px rgba(99, 102, 241, 0.08);
+  }
+
+  .glass-navbar {
+    background: linear-gradient(
+      180deg,
+      rgba(12, 6, 28, 0.75) 0%,
+      rgba(5, 2, 14, 0.45) 100%
+    );
+    backdrop-filter: blur(24px) saturate(150%);
+    -webkit-backdrop-filter: blur(24px) saturate(150%);
+    border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.35);
+  }
+
+  .text-glow {
+    text-shadow:
+      0 0 20px rgba(167, 139, 250, 0.5),
+      0 0 40px rgba(99, 102, 241, 0.3);
+  }
+
+  .text-glow-subtle {
+    text-shadow: 0 0 24px rgba(139, 92, 246, 0.35);
+  }
+
+  .border-glow {
+    box-shadow:
+      0 0 0 1px rgba(139, 92, 246, 0.35),
+      0 0 30px rgba(99, 102, 241, 0.15),
+      inset 0 0 20px rgba(139, 92, 246, 0.05);
+  }
+
+  .input-glow:focus {
+    border-color: rgba(167, 139, 250, 0.55);
+    box-shadow:
+      0 0 0 3px rgba(99, 102, 241, 0.22),
+      0 0 28px rgba(139, 92, 246, 0.25),
+      inset 0 0 20px rgba(139, 92, 246, 0.06);
+  }
+
+  .shadow-neon {
+    box-shadow:
+      0 0 24px rgba(139, 92, 246, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+
+  .shadow-neon-strong {
+    box-shadow:
+      0 0 36px rgba(192, 38, 211, 0.5),
+      0 0 80px rgba(99, 102, 241, 0.25),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+
+  .shadow-glass-lg {
+    box-shadow:
+      0 24px 60px rgba(0, 0, 0, 0.55),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      0 0 80px rgba(99, 102, 241, 0.07);
+  }
+
+  /* live cipher pulse for "encrypted state" labels */
+  .cipher-pulse {
+    animation: cipherPulse 3.4s ease-in-out infinite;
+  }
+}
+
+@keyframes cipherPulse {
+  0%, 100% {
+    text-shadow:
+      0 0 18px rgba(139, 92, 246, 0.45),
+      0 0 32px rgba(192, 38, 211, 0.25);
+  }
+  50% {
+    text-shadow:
+      0 0 28px rgba(139, 92, 246, 0.85),
+      0 0 56px rgba(192, 38, 211, 0.55);
+  }
+}
+
+@keyframes scanLine {
+  0% {
+    transform: translateY(-120%);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(120%);
+    opacity: 0;
+  }
+}
+
+.scanline::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(167, 139, 250, 0.18) 45%,
+    rgba(232, 121, 249, 0.28) 50%,
+    rgba(167, 139, 250, 0.18) 55%,
+    transparent 100%
+  );
+  animation: scanLine 4s linear infinite;
+}
+
+/* Subtle noise overlay */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  z-index: 1;
+}
