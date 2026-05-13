@@ -1,174 +1,108 @@
-# Sealed-Bid Auction - Private Bids, Fair Outcomes
+# ShadowBid — sealed-bid auctions on Solana with Arcium
 
-Traditional auction platforms have access to all bids. Even "sealed" bids are only sealed from other bidders - the platform sees everything. This creates opportunities for bid manipulation, information leakage, and requires trusting the auctioneer not to exploit their privileged position.
+Traditional auctions on a public chain expose every bid. **ShadowBid** keeps **individual bid amounts encrypted** until the seller runs **reveal**: the Arcium MXE compares bids inside MPC and only the **winning pubkey** and **winning bid amount** become public. Losing bids stay sealed.
 
-This example demonstrates sealed-bid auctions where bid amounts remain encrypted throughout the auction. The platform never sees individual bid values - only the final winner and payment amount are revealed.
+This repo is an **Arcium + Anchor** reference implementation plus a **Next.js** app for browsing listings, bidding, and (for the listing authority) setting deadlines and revealing the winner.
 
-## Why are sealed-bid auctions hard?
+## What this program actually implements
 
-Transparent blockchain architectures conflict with bid privacy requirements:
+| Mechanism | Status |
+|-----------|--------|
+| **Uniform / first-price sealed bid** | Implemented: encrypted state tracks **highest bid** + **highest bidder**; reveal publishes those values. |
+| **Vickrey (second-price)** | **Not implemented** — that needs a **second-highest** ciphertext in the MPC state and different reveal logic. |
+| **On-chain escrow / automatic refunds** | **Not implemented** — amounts are proofs-of-bid semantics; settlement is assumed off-chain unless you extend the program. |
 
-1. **Bid visibility**: All blockchain data is publicly accessible by default - competitors see your bid
-2. **Strategic manipulation**: Visible bids enable last-minute sniping and bid shading
-3. **Platform trust**: Traditional sealed-bid auctions require trusting the auctioneer to not peek at bids or collude with bidders
-4. **Winner determination**: Computing the highest bid without revealing all bid amounts is non-trivial
-5. **Pricing mechanisms**: Supporting different auction types (first-price vs Vickrey) requires tracking both highest and second-highest bids privately
+If a hackathon brief mentions Vickrey, treat ShadowBid as a **minimal sealed-bid building block** where Arcium handles **private comparison + selective decryption** of the aggregate state.
 
-The requirement is determining the auction winner and payment amount without revealing individual bids, while ensuring the process is verifiable and tamper-resistant.
+---
 
-## How Sealed-Bid Auctions Work
+## Why Arcium fits
 
-The protocol maintains bid privacy while providing accurate winner determination:
+1. **Chain sees ciphertexts** — Validators index `place_bid` transactions but only see encrypted payloads and MXE ciphertext rows, not plaintext amounts suitable for sandwiching or order-flow games.
+2. **Comparison inside the MXE** — The `place_bid` Arcis instruction decrypts bids **inside** the MPC context, updates `AuctionState`, and writes fresh MXE ciphertexts back to Solana (`encrypted_state`).
+3. **Selective revelation** — `reveal_winner` runs only after optional **deadline** rules are satisfied (`set_auction_deadline` locks an immutable `bidding_ends_at`; reveal requires that time to pass if set). Output is bounded: winner + winning bid lamports — not every historical bid.
 
-1. **Auction creation**: Authority creates an auction specifying the type (first-price or Vickrey), minimum bid, and end time
-2. **Bid encryption**: Bidders encrypt their bid amounts locally before submission using the MXE public key
-3. **Encrypted comparison**: Arcium nodes compare new bids against the encrypted auction state without decrypting
-4. **State update**: Highest and second-highest bids are tracked in encrypted form on-chain
-5. **Winner revelation**: After the auction closes, only the winner identity and payment amount are revealed - not individual bid values
-6. **Security guarantee**: Arcium's MPC protocol ensures auction integrity even with a dishonest majority - bid values remain private as long as one node is honest
+The in-app **[About](/about)** page (when you run or deploy the web app) spells out the bidder-facing flow step by step.
 
-## Running the Example
+---
 
-```bash
-# Install dependencies
-yarn install  # or npm install or pnpm install
+## Protocol sketch (aligned with code)
 
-# Build the program
-arcium build
+1. **`create_auction`** — Seeds the auction account, stores public listing text (`title`, `description`, optional `image_uri`), and queues **`init_auction_state`** so the MXE initializes encrypted `AuctionState`.
+2. **`place_bid`** — Client encrypts **bid amount** and **bidder pubkey** fragments with ephemeral X25519 + the MXE key; submits ciphertexts + nonces; Arcium **`place_bid`** circuit merges them into **`Enc<Mxe, AuctionState>`**.
+3. **`set_auction_deadline`** (optional, authority once) — Sets `bidding_ends_at` so `place_bid` rejects afterward and `reveal_winner` is only callable after the window closes.
+4. **`reveal_winner`** — Authority queues **`reveal_winner`**; callback writes **`revealed`**, **`winner`**, **`winning_bid`** cleartext on-chain.
 
-# Run tests
-arcium test
-```
+---
 
-The test suite demonstrates complete auction flows for both first-price and Vickrey auction types, including auction creation, encrypted bid submission, and winner determination.
+## Encrypted auction state (this repo)
 
-## Technical Implementation
-
-Bids are encrypted using X25519 key exchange with the MXE public key before submission. The auction state stores five encrypted values on-chain: highest bid, highest bidder (as `SerializedSolanaPublicKey`), second-highest bid, and bid count.
-
-Key properties:
-
-- **Bid secrecy**: Individual bid amounts remain encrypted throughout the auction lifecycle
-- **Distributed computation**: Arcium nodes jointly compare and update encrypted auction state
-- **Selective revelation**: Only the winner and payment amount are revealed, not the losing bids
-
-## Implementation Details
-
-### The Sealed Bid Problem
-
-**Conceptual Challenge**: How do you find the maximum value in a set without revealing any individual values?
-
-Traditional approaches all fail:
-
-- **Encrypt then decrypt**: Someone holds the decryption key and can see all bids
-- **Trusted auctioneer**: Requires trusting the platform not to leak or exploit bid information
-- **Commit-reveal**: Bidders can see others' bids before revealing, enabling strategic behavior
-
-**The Question**: Can we compare encrypted bids and track the highest one without ever decrypting individual values?
-
-### The Encrypted Auction State Pattern
-
-Sealed-bid auction demonstrates storing encrypted comparison state in Anchor accounts:
+Arcis compilation target lives in **`encrypted-ixs/src/blind_auction.rs`**:
 
 ```rust
 pub struct AuctionState {
     pub highest_bid: u64,
-    pub highest_bidder: SerializedSolanaPublicKey,  // Winner pubkey (lo/hi u128 pair)
-    pub second_highest_bid: u64,  // Required for Vickrey auctions
-    pub bid_count: u16,
+    pub highest_bidder: SerializedSolanaPublicKey,
 }
 ```
 
-**Why `SerializedSolanaPublicKey`?** Solana public keys are 32 bytes, but Arcis field elements are smaller. `SerializedSolanaPublicKey` is a built-in type that handles the lo/hi u128 splitting automatically.
+Solana persists **three** 32-byte limbs (`[[u8; 32]; 3]`) — ciphertext material for **`u64` + `SerializedSolanaPublicKey` (lo/hi `u128`)** under the MXE — plus a `state_nonce` for rotation. **`bid_count`** is public and incremented on-chain after each finalized `place_bid` computation.
 
-**On-chain storage**: The encrypted state is stored as `[[u8; 32]; 5]` - five 32-byte ciphertexts representing each field.
+Winner extraction from the MPC output is flattened in **`reveal_winner_callback`** (`programs/shadow_bid/src/lib.rs`) into **`winning_bid`** plus **`winner` `Pubkey`**.
 
-> Learn more about [Arcis Types](https://docs.arcium.com/developers/arcis/types) for encrypted value handling.
+Learn more about Arcis types at [Arcis Types](https://docs.arcium.com/developers/arcis/types).
 
-### The Bid Comparison Logic
+---
 
-**MPC instruction** (runs inside encrypted computation):
+## Repository layout
 
-```rust
-pub fn place_bid(
-    bid_ctxt: Enc<Shared, Bid>,       // Bidder's encrypted bid
-    state_ctxt: Enc<Mxe, AuctionState>, // Current encrypted auction state
-) -> Enc<Mxe, AuctionState> {
-    let bid = bid_ctxt.to_arcis();      // Decrypt in MPC (never exposed)
-    let mut state = state_ctxt.to_arcis();
+- **`programs/shadow_bid`** — Anchor program (`create_auction`, `place_bid`, `set_auction_deadline`, `reveal_winner`, comp-def inits).
+- **`encrypted-ixs`** — Arcis circuits (`init_auction_state`, `place_bid`, `reveal_winner`).
+- **`web`** — Next.js UI (`/auctions`, `/auctions/[pda]`, `/about`, `/dashboard`).
+- **`tests/shadow_bid.ts`** — Integration test for create → bid → finalize path.
 
-    if bid.amount > state.highest_bid {
-        // New highest bid - shift current highest to second place
-        state.second_highest_bid = state.highest_bid;
-        state.highest_bid = bid.amount;
-        state.highest_bidder = bid.bidder;
-    } else if bid.amount > state.second_highest_bid {
-        // New second-highest bid
-        state.second_highest_bid = bid.amount;
-    }
+---
 
-    state.bid_count += 1;
-    state_ctxt.owner.from_arcis(state)  // Re-encrypt updated state
-}
+## Build & test (maintainers / CI paths)
+
+From the repo root:
+
+```bash
+yarn install           # toolchain deps + scripts
+arcium build          # Rust program + Arcis artifacts
+arcium test           # Anchor-style integration suite
 ```
 
-**Key insight**: The comparison `bid.amount > state.highest_bid` happens inside MPC - decrypted values never leave the secure environment.
+To refresh bundled IDL/types/circuits for the web app:
 
-### First-Price vs Vickrey Auctions
-
-This example supports two auction mechanisms with different economic properties:
-
-**First-price auction**: Winner pays their bid amount.
-
-```rust
-pub fn determine_winner_first_price(state_ctxt: Enc<Mxe, AuctionState>) -> AuctionResult {
-    let state = state_ctxt.to_arcis();
-    AuctionResult {
-        winner: state.highest_bidder,
-        payment_amount: state.highest_bid,  // Pay your bid
-    }.reveal()
-}
+```bash
+arcium build && cd web && yarn copy:artifacts
 ```
 
-**Vickrey (second-price) auction**: Winner pays the second-highest bid.
+Requires Node **≥ 20** (see `web/package.json` and `web/.nvmrc`). Pushes to **`main`** run **GitHub Actions** over `web` (`yarn build`).
 
-```rust
-pub fn determine_winner_vickrey(state_ctxt: Enc<Mxe, AuctionState>) -> AuctionResult {
-    let state = state_ctxt.to_arcis();
-    AuctionResult {
-        winner: state.highest_bidder,
-        payment_amount: state.second_highest_bid,  // Pay second-highest
-    }.reveal()
-}
-```
+---
 
-**Why Vickrey matters**: In a Vickrey auction, bidding your true valuation is the dominant strategy - you can't benefit from bidding lower (you might lose) or higher (you'd overpay). This incentive-compatibility property, discovered by economist William Vickrey (Nobel Prize 1996), is widely used in ad auctions (Google, Meta) and spectrum auctions.
+## Deploying the web app (e.g. Vercel)
 
-### When to Use This Pattern
+1. Deploy the program + Arcium MXE resources to your cluster (e.g. Devnet) and keep **`web/lib/idl/shadow_bid.json`** in sync with that build.
+2. Set environment variables (Vercel **or** `web/.env.local`):
+   - `NEXT_PUBLIC_SITE_URL` — public origin (for absolute links / assets).
+   - `NEXT_PUBLIC_SOLANA_RPC_URL` — shared RPC for all users (default devnet in code if unset).
+   - `NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET` — must match your MXE deployment.
+   - `NEXT_PUBLIC_SHADOW_BID_PROGRAM_ID` — must match the IDL.
+3. `cd web && yarn install && yarn build` (CI does this on every PR/push to `main`).
 
-Apply sealed-bid auctions when:
+---
 
-- **Bid privacy is critical**: Prevent competitors from seeing and reacting to bids
-- **Strategic behavior is harmful**: Eliminate sniping, bid shading, and collusion
-- **Verifiable fairness is required**: Prove the winner determination was correct without revealing losing bids
-- **Multiple pricing mechanisms**: Need flexibility between first-price and second-price rules
+## Known limitations
 
-**Example applications**: NFT auctions, ad bidding systems, procurement contracts, treasury bond auctions, spectrum license sales.
+- **No minimum bid in-circuit** — Adding one requires threading a plaintext or encrypted floor into the Arcis `place_bid` logic and proving comparison.
+- **Multiple bids per wallet** — Allowed; `bid_count` counts transactions, not unique bidders. Under first-price semantics, repeat bids from the same key only replace the encrypted high-water mark if they exceed it.
+- **No on-chain payout** — The auction proves who won and the revealed amount (lamports semantics in the ciphertext); escrow and refunds are roadmap items (also noted in-app).
 
-This pattern extends to any scenario requiring private comparison and selection: hiring decisions, grant allocations, or matching markets where selection criteria should remain confidential.
+---
 
-## Known Limitations
+## License
 
-**`min_bid` not enforced against encrypted bids.** The `min_bid` field is stored on-chain but never checked -- on-chain validation is impossible (the bid is encrypted), and circuit-side validation would require passing `min_bid` as a plaintext argument. For production, pass `min_bid` into the circuit and compare before updating state.
-
-**No per-bidder deduplication.** A bidder can submit multiple bids. This is non-exploitable: in Vickrey mode, duplicate bids can only increase the second-highest price (hurting the bidder). In first-price mode, the bidder always pays their highest bid regardless. The `bid_count` field reflects total bids, not unique bidders.
-
-## Deploying the web frontend
-
-1. Deploy the ShadowBid program and Arcium MXE resources to your target cluster (for example Solana Devnet), then align `NEXT_PUBLIC_SHADOW_BID_PROGRAM_ID`, `NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET`, and `web/lib/idl/shadow_bid.json` with that deployment.
-2. Copy `web/.env.local.example` to `web/.env.local` (or configure the same variables in your host). Set `NEXT_PUBLIC_SITE_URL` to the public origin so circuit artifacts (`/public/circuits/*.arcis`) resolve correctly.
-3. Run `arcium build && cd web && yarn copy:artifacts`, then `yarn build`. Provision MXE computation definitions using the deployment operator workflow (not shown to end users in production builds).
-
-All clients must share the same `NEXT_PUBLIC_SOLANA_RPC_URL` (and program id) to see the same auction set.
-
-For development against a validator on `127.0.0.1:8899`, set `NEXT_PUBLIC_SOLANA_RPC_URL=http://127.0.0.1:8899` in `web/.env.local`.
+See `package.json` (repository root).
