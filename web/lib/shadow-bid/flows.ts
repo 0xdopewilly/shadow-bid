@@ -36,6 +36,36 @@ export function getShadowBidProgram(
   return new Program(idlJson as Idl, provider) as Program<ShadowBid>;
 }
 
+/**
+ * Program instance for RPC reads (e.g. getProgramAccounts) without a browser wallet.
+ * Signing transactions with this stub will not produce valid signatures — use a real
+ * Anchor wallet provider for writes.
+ */
+export function getReadOnlyShadowBidProgram(
+  connection: Connection
+): ShadowBidProgram {
+  const stub = Keypair.generate();
+  const wallet = {
+    publicKey: stub.publicKey,
+    signTransaction: async <
+      T extends anchor.web3.Transaction | anchor.web3.VersionedTransaction,
+    >(
+      t: T
+    ) => t,
+    signAllTransactions: async <
+      T extends anchor.web3.Transaction | anchor.web3.VersionedTransaction,
+    >(
+      ts: T[]
+    ) => ts,
+  };
+  const provider = new anchor.AnchorProvider(
+    connection,
+    wallet as anchor.Wallet,
+    { commitment: "confirmed" }
+  );
+  return getShadowBidProgram(provider);
+}
+
 export function getAuctionPda(
   programId: PublicKey,
   authority: PublicKey

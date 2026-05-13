@@ -4,6 +4,7 @@ import {
   ALL_CIRCUITS,
   fetchAllAuctions,
   getMXEPublicKeyWithRetry,
+  getReadOnlyShadowBidProgram,
   getShadowBidProgram,
   initComputationDefinition,
   reclaimComputationRent,
@@ -62,7 +63,8 @@ type Ctx = {
   rpcEndpoint: string;
 
   // chain
-  program: ShadowBidProgram | null;
+  /** Anchor program bound to RPC; works for reads even without a wallet. Use `provider` for signed txs only. */
+  program: ShadowBidProgram;
   provider: anchor.AnchorProvider | null;
   clusterOffset: number;
   rpcReachable: boolean | null;
@@ -123,8 +125,11 @@ export function ShadowBidProvider({ children }: { children: ReactNode }) {
   }, [connection, anchorWallet]);
 
   const program = useMemo(
-    () => (provider ? getShadowBidProgram(provider) : null),
-    [provider]
+    () =>
+      provider != null
+        ? getShadowBidProgram(provider)
+        : getReadOnlyShadowBidProgram(connection),
+    [provider, connection]
   );
 
   const [rpcReachable, setRpcReachable] = useState<boolean | null>(null);
@@ -278,10 +283,6 @@ export function ShadowBidProvider({ children }: { children: ReactNode }) {
   const [auctionsLoading, setAuctionsLoading] = useState(false);
 
   const refreshAllAuctions = useCallback(async () => {
-    if (!program) {
-      setAllAuctions([]);
-      return;
-    }
     if (rpcReachable !== true) {
       return;
     }
