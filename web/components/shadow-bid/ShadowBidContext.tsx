@@ -7,6 +7,7 @@ import {
   getShadowBidProgram,
   initComputationDefinition,
   reclaimComputationRent,
+  fetchCircuitFromOrigin,
   type ShadowBidProgram,
   type AuctionListEntry,
 } from "@/lib/shadow-bid/flows";
@@ -36,7 +37,6 @@ import {
   type ReactNode,
 } from "react";
 import { ToastStack, type Toast } from "@/components/shadow-bid/Toasts";
-import { fetchCircuitFromOrigin } from "@/lib/shadow-bid/flows";
 
 type CircuitsProbe = "unknown" | "ok" | "missing";
 

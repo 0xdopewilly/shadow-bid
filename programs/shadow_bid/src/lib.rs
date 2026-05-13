@@ -163,7 +163,7 @@ pub mod shadow_bid {
     }
 
     #[arcium_callback(encrypted_ix = "place_bid")]
-    pub     fn place_bid_callback(
+    pub fn place_bid_callback(
         ctx: Context<PlaceBidCallback>,
         output: SignedComputationOutputs<PlaceBidOutput>,
     ) -> Result<()> {
@@ -177,9 +177,16 @@ pub mod shadow_bid {
 
         let auction_key = ctx.accounts.auction.key();
         let auction = &mut ctx.accounts.auction;
-        // Belt-and-suspenders: deadline already enforced in `place_bid` entry,
-        // but recheck here in case the computation finalizes after expiry.
         require!(!auction.revealed, ErrorCode::AuctionAlreadyRevealed);
+        // Same bidding window as `place_bid`: do not persist a bid whose
+        // computation settles after `bidding_ends_at`.
+        if auction.bidding_ends_at != 0 {
+            let now = Clock::get()?.unix_timestamp;
+            require!(
+                now < auction.bidding_ends_at,
+                ErrorCode::AuctionEnded
+            );
+        }
         auction.encrypted_state = o.ciphertexts;
         auction.state_nonce = o.nonce;
         auction.bid_count = auction

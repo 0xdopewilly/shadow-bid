@@ -2,6 +2,7 @@
   "name": "shadow-bid-web",
   "version": "0.1.0",
   "private": true,
+  "license": "ISC",
   "scripts": {
     "clean": "rm -rf .next",
     "dev": "next dev",

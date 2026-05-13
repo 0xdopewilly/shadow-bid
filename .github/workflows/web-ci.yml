@@ -7,6 +7,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SITE_URL: https://example.com
+      NEXT_PUBLIC_SOLANA_RPC_URL: https://api.devnet.solana.com
+      NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET: "0"
+      NEXT_PUBLIC_SHADOW_BID_PROGRAM_ID: EvyVpkAWdKABJAZZ73YkMwGiVS3QJMEJ7vHvKh6FYuBt
     defaults:
       run:
         working-directory: web
