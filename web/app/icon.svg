@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <title>ShadowBid</title>
+  <defs>
+    <linearGradient id="sbGlow" x1="6" y1="5" x2="27" y2="28" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c4b5fd" />
+      <stop offset="0.42" stop-color="#e879f9" />
+      <stop offset="1" stop-color="#818cf8" />
+    </linearGradient>
+    <radialGradient
+      id="sbFace"
+      cx="0"
+      cy="0"
+      r="1"
+      gradientUnits="userSpaceOnUse"
+      gradientTransform="translate(16 12) rotate(90) scale(14 17)"
+    >
+      <stop stop-color="#312e81" stop-opacity="0.75" />
+      <stop offset="1" stop-color="#0c0718" stop-opacity="0.98" />
+    </radialGradient>
+  </defs>
+  <!-- Chip -->
+  <rect width="32" height="32" rx="9" fill="#06030f" />
+  <rect width="32" height="32" rx="9" fill="url(#sbFace)" />
+  <!-- Sealed crest (shield) + upward bid wedge -->
+  <path
+    d="M16 7.25L23.95 11.08c.28.13.43.43.43.73v6.92c0 3.9-3.06 7.48-8.06 9.52h-.72c-5.01-2.04-8.06-5.61-8.06-9.52v-6.92c0-.3.14-.59.43-.73L16 7.25z"
+    stroke="url(#sbGlow)"
+    stroke-width="1.35"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M16 12.85l5.05 8.4H10.95l5.05-8.4z"
+    fill="url(#sbGlow)"
+    opacity="0.92"
+  />
+</svg>
