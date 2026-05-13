@@ -37,4 +37,12 @@ mod circuits {
 
         state_ctxt.owner.from_arcis(state)
     }
+
+    /// Final reveal — decrypt the MXE-sealed AuctionState into a public output.
+    /// Should only be queued after the seller has decided the auction is over;
+    /// the on-chain `reveal_winner` instruction guards this with `has_one = authority`.
+    #[instruction]
+    pub fn reveal_winner(state_ctxt: Enc<Mxe, AuctionState>) -> AuctionState {
+        state_ctxt.to_arcis().reveal()
+    }
 }

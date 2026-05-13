@@ -178,7 +178,12 @@ describe("shadow_bid (Arcium blind auction)", () => {
     const createdPromise = awaitEvent("auctionCreatedEvent", auctionPda);
 
     await program.methods
-      .createAuction(createComputationOffset)
+      .createAuction(
+        createComputationOffset,
+        "ShadowBid test lot",
+        "Sealed-bid integration test auction.",
+        ""
+      )
       .accountsPartial({
         authority: owner.publicKey,
         auction: auctionPda,

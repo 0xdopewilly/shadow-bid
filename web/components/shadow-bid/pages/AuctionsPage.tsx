@@ -7,6 +7,7 @@ import type { AuctionListEntry } from "@/lib/shadow-bid/flows";
 import {
   createAuctionFlow,
   getAuctionPda,
+  listingImageSrc,
   setAuctionDeadlineFlow,
 } from "@/lib/shadow-bid/flows";
 import { isLocalSolanaRpc } from "@/lib/solana/cluster";
@@ -95,6 +96,7 @@ export function AuctionsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftDescription, setDraftDescription] = useState("");
+  const [draftImageUri, setDraftImageUri] = useState("");
   const [lockDeadlineOnCreate, setLockDeadlineOnCreate] = useState(false);
   const [createDeadlineMinutes, setCreateDeadlineMinutes] = useState(60);
 
@@ -123,7 +125,8 @@ export function AuctionsPage() {
           a.authority.toBase58().toLowerCase().includes(q) ||
           (a.revealed && a.winner.toBase58().toLowerCase().includes(q)) ||
           (a.title && a.title.toLowerCase().includes(q)) ||
-          (a.description && a.description.toLowerCase().includes(q))
+          (a.description && a.description.toLowerCase().includes(q)) ||
+          (a.imageUri && a.imageUri.toLowerCase().includes(q))
       );
 
     return [...list].sort((a, b) =>
@@ -154,6 +157,15 @@ export function AuctionsPage() {
   const submitCreate = useCallback(async () => {
     if (!program || !provider || !publicKey)
       throw new Error("Connect wallet first");
+    const trimmedImg = draftImageUri.trim();
+    if (trimmedImg && !listingImageSrc(trimmedImg)) {
+      pushToast({
+        kind: "warn",
+        title: "Invalid image link",
+        body: "Use https://, http:// (local only), or ipfs://…",
+      });
+      return;
+    }
     setCreating(true);
     try {
       const { auction } = await createAuctionFlow(
@@ -164,6 +176,7 @@ export function AuctionsPage() {
         {
           title: draftTitle,
           description: draftDescription,
+          imageUri: trimmedImg,
         }
       );
       pushFeed(`Auction live · ${auction.toBase58().slice(0, 6)}…`, true);
@@ -196,6 +209,7 @@ export function AuctionsPage() {
       setCreateOpen(false);
       setDraftTitle("");
       setDraftDescription("");
+      setDraftImageUri("");
       setLockDeadlineOnCreate(false);
       setCreateDeadlineMinutes(60);
       await refreshAllAuctions();
@@ -210,6 +224,7 @@ export function AuctionsPage() {
     clusterOffset,
     draftTitle,
     draftDescription,
+    draftImageUri,
     lockDeadlineOnCreate,
     createDeadlineMinutes,
     pushFeed,
@@ -361,8 +376,9 @@ export function AuctionsPage() {
         <p className="mb-6 flex items-start gap-2 text-[12px] leading-relaxed text-slate-500 sm:items-center">
           <Shield className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-400/80 sm:mt-0" />
           <span>
-            Titles and descriptions are public on-chain so anyone on this cluster can discover the
-            sale; sealed bid amounts stay encrypted until the seller reveals the winner.
+            Titles, descriptions, and optional image links are public on-chain so anyone on this cluster
+            can discover the sale; sealed bid amounts stay encrypted until the seller reveals the winner.
+            Sellers can share an auction&apos;s page URL so others can bid from their own wallets.
           </span>
         </p>
         {filtered.length === 0 ? (
@@ -410,8 +426,8 @@ export function AuctionsPage() {
               </button>
               <h2 className="text-lg font-semibold text-white">New sealed auction</h2>
               <p className="mt-1 text-xs text-slate-400">
-                Title &amp; description are stored on-chain so bidders everywhere see the same
-                listing. Bid amounts stay encrypted forever until reveal.
+                Title, details, and an optional image URL are stored on-chain (host the image
+                elsewhere — HTTPS or ipfs://). Bid amounts stay encrypted until reveal.
               </p>
 
               <label className="mt-4 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
@@ -436,6 +452,18 @@ export function AuctionsPage() {
                 rows={4}
                 placeholder="Rules, item description, shipping notes, links…"
                 className="mt-1 w-full resize-none rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none input-glow placeholder:text-slate-600"
+              />
+
+              <label className="mt-3 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                Image URL (optional)
+              </label>
+              <input
+                type="url"
+                value={draftImageUri}
+                onChange={(e) => setDraftImageUri(e.target.value)}
+                maxLength={220}
+                placeholder="https://… or ipfs://…"
+                className="mt-1 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-xs text-white outline-none input-glow placeholder:text-slate-600"
               />
 
               <div className="mt-4 rounded-xl border border-white/[0.07] bg-white/[0.03] p-3">

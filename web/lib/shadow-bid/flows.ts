@@ -183,6 +183,27 @@ export async function initComputationDefinition(
   await uploadCircuit(provider, circuitName, program.programId, raw, false);
 }
 
+/**
+ * Normalize an optional listing image URI for `<img src>`.
+ * Supports `https:`, `http:` (local dev), and `ipfs://` (via a public gateway).
+ */
+export function listingImageSrc(raw: string | undefined | null): string | null {
+  const s = raw?.trim();
+  if (!s) return null;
+  try {
+    if (s.startsWith("ipfs://")) {
+      const path = s.slice("ipfs://".length).replace(/^ipfs\//, "");
+      if (!path) return null;
+      return `https://ipfs.io/ipfs/${path}`;
+    }
+    const u = new URL(s);
+    if (u.protocol === "https:" || u.protocol === "http:") return u.toString();
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 /** Truncate a string so its UTF-8 byte length is <= maxBytes. */
 export function truncateUtf8(s: string, maxBytes: number): string {
   const enc = new TextEncoder();
@@ -201,7 +222,7 @@ export async function createAuctionFlow(
   provider: anchor.AnchorProvider,
   clusterOffset: number,
   authority: PublicKey,
-  meta: { title: string; description: string }
+  meta: { title: string; description: string; imageUri?: string }
 ): Promise<{ auction: PublicKey; computationOffset: anchor.BN }> {
   const computationOffset = new anchor.BN(Buffer.from(randomBytes(8)), "le");
   const clusterAccount = getClusterAccAddress(clusterOffset);
@@ -212,9 +233,10 @@ export async function createAuctionFlow(
     64
   );
   const description = truncateUtf8(meta.description.trim(), 256);
+  const imageUri = truncateUtf8((meta.imageUri ?? "").trim(), 200);
 
   await program.methods
-    .createAuction(computationOffset, title, description)
+    .createAuction(computationOffset, title, description, imageUri)
     .accountsPartial({
       authority,
       auction,
@@ -386,6 +408,8 @@ export type AuctionAccountData = {
   title: string;
   /** Longer listing copy (on-chain). */
   description: string;
+  /** Optional image URL (on-chain); see `listingImageSrc`. */
+  imageUri: string;
 };
 
 export type AuctionListEntry = {
@@ -400,6 +424,7 @@ export type AuctionListEntry = {
   biddingEndsAt: number;
   title: string;
   description: string;
+  imageUri: string;
 };
 
 /**
@@ -514,6 +539,7 @@ export async function fetchAllAuctions(
     biddingEndsAt: Number(account.biddingEndsAt.toString()),
     title: account.title ?? "",
     description: account.description ?? "",
+    imageUri: account.imageUri ?? "",
   }));
 }
 
@@ -539,6 +565,7 @@ export async function fetchAuctionAccount(
       biddingEndsAt: Number(acc.biddingEndsAt.toString()),
       title: acc.title ?? "",
       description: acc.description ?? "",
+      imageUri: acc.imageUri ?? "",
     };
   } catch {
     return null;

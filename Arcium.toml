@@ -6,8 +6,8 @@ nodes_ips = [
   [172, 20, 0, 100],
   [172, 20, 0, 101]
 ]
-# number of seconds to wait for the localnet to come online
-localnet_timeout_secs = 60
+# Seconds to wait for Solana localnet RPC (Arcium wraps Anchor; default 60 is often too low for heavy genesis).
+localnet_timeout_secs = 300
 # MPC backends this MXE supports (default: ["Cerberus"])
 # Supported values: "Cerberus"
 backends = ["Cerberus"]

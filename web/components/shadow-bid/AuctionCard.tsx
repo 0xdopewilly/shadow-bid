@@ -1,6 +1,7 @@
 "use client";
 
-import type { AuctionListEntry } from "@/lib/shadow-bid/flows";
+import { SafeRemoteImage } from "@/components/shadow-bid/SafeRemoteImage";
+import { listingImageSrc, type AuctionListEntry } from "@/lib/shadow-bid/flows";
 import { motion } from "framer-motion";
 import { Crown, Lock, Trophy, User as UserIcon } from "lucide-react";
 import Link from "next/link";
@@ -33,6 +34,7 @@ export function AuctionCard({ auction, isMine, showCta = true }: Props) {
   const revealed = auction.revealed;
   const title = auction.title?.trim() ?? "";
   const desc = auction.description?.trim() ?? "";
+  const imgSrc = listingImageSrc(auction.imageUri);
 
   return (
     <motion.div
@@ -51,6 +53,16 @@ export function AuctionCard({ auction, isMine, showCta = true }: Props) {
             "radial-gradient(ellipse at center, rgba(139,92,246,0.45), transparent 60%)",
         }}
       />
+
+      {imgSrc ? (
+        <div className="relative -mx-5 -mt-5 mb-4 overflow-hidden rounded-t-2xl border-b border-white/[0.08] bg-black/40">
+          <SafeRemoteImage
+            src={imgSrc}
+            alt=""
+            className="h-36 w-full object-cover"
+          />
+        </div>
+      ) : null}
 
       <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">

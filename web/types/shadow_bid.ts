@@ -140,6 +140,10 @@ export type ShadowBid = {
         {
           "name": "description",
           "type": "string"
+        },
+        {
+          "name": "imageUri",
+          "type": "string"
         }
       ]
     },
@@ -949,6 +953,11 @@ export type ShadowBid = {
       "code": 6009,
       "name": "descriptionTooLong",
       "msg": "Auction description too long (max 256 bytes UTF-8)"
+    },
+    {
+      "code": 6010,
+      "name": "imageUriTooLong",
+      "msg": "Auction image URL too long (max 200 bytes UTF-8)"
     }
   ],
   "types": [
@@ -1058,6 +1067,13 @@ export type ShadowBid = {
           },
           {
             "name": "description",
+            "type": "string"
+          },
+          {
+            "name": "imageUri",
+            "docs": [
+              "Optional HTTPS / ipfs URL for listing imagery (UTF-8, max 200 bytes)."
+            ],
             "type": "string"
           }
         ]

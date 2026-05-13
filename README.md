@@ -162,3 +162,13 @@ This pattern extends to any scenario requiring private comparison and selection:
 **`min_bid` not enforced against encrypted bids.** The `min_bid` field is stored on-chain but never checked -- on-chain validation is impossible (the bid is encrypted), and circuit-side validation would require passing `min_bid` as a plaintext argument. For production, pass `min_bid` into the circuit and compare before updating state.
 
 **No per-bidder deduplication.** A bidder can submit multiple bids. This is non-exploitable: in Vickrey mode, duplicate bids can only increase the second-highest price (hurting the bidder). In first-price mode, the bidder always pays their highest bid regardless. The `bid_count` field reflects total bids, not unique bidders.
+
+## Deploying the web frontend
+
+1. Deploy the ShadowBid program and Arcium MXE resources to your target cluster (for example Solana Devnet), then align `NEXT_PUBLIC_SHADOW_BID_PROGRAM_ID`, `NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET`, and `web/lib/idl/shadow_bid.json` with that deployment.
+2. Copy `web/.env.local.example` to `web/.env.local` (or configure the same variables in your host). Set `NEXT_PUBLIC_SITE_URL` to the public origin so circuit artifacts (`/public/circuits/*.arcis`) resolve correctly.
+3. Run `arcium build && cd web && yarn copy:artifacts`, then `yarn build`. Provision MXE computation definitions using the deployment operator workflow (not shown to end users in production builds).
+
+All clients must share the same `NEXT_PUBLIC_SOLANA_RPC_URL` (and program id) to see the same auction set.
+
+For development against a validator on `127.0.0.1:8899`, set `NEXT_PUBLIC_SOLANA_RPC_URL=http://127.0.0.1:8899` in `web/.env.local`.

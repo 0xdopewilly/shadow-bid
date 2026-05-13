@@ -5,8 +5,10 @@ import { CiphertextRain } from "@/components/shadow-bid/CiphertextRain";
 import { EpochTimer } from "@/components/shadow-bid/EpochTimer";
 import { RevealModal } from "@/components/shadow-bid/RevealModal";
 import { useShadowBid } from "@/components/shadow-bid/ShadowBidContext";
+import { SafeRemoteImage } from "@/components/shadow-bid/SafeRemoteImage";
 import {
   fetchAuctionAccount,
+  listingImageSrc,
   placeBidFlow,
   revealWinnerFlow,
   setAuctionDeadlineFlow,
@@ -30,6 +32,7 @@ import {
   Loader2,
   Lock,
   Radio,
+  Share2,
   Shield,
   Trophy,
   User as UserIcon,
@@ -52,6 +55,7 @@ type Snapshot = {
   /** Listing metadata (public on-chain). */
   title: string;
   description: string;
+  imageUri: string;
   fetchedAt: number;
 };
 
@@ -146,6 +150,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
         biddingEndsAt: data.biddingEndsAt,
         title: data.title,
         description: data.description,
+        imageUri: data.imageUri,
         fetchedAt: Date.now(),
       });
     else setSnapshot(null);
@@ -362,6 +367,8 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
     );
   }
 
+  const listingHeroSrc = snapshot ? listingImageSrc(snapshot.imageUri) : null;
+
   return (
     <AppShell>
       <RevealModal
@@ -427,6 +434,21 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
                 )}
                 copy address
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const url = `${window.location.origin}/auctions/${auctionPda}`;
+                  void copyToClipboard("listing link", url);
+                }}
+                className="inline-flex items-center gap-1 rounded border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 text-violet-200/90 hover:bg-violet-500/20 hover:text-white"
+              >
+                {copyFlash === "listing link" ? (
+                  <Check className="h-3 w-3 text-emerald-400" />
+                ) : (
+                  <Share2 className="h-3 w-3" />
+                )}
+                copy invite link
+              </button>
               {snapshot ? (
                 <>
                   <span className="inline-flex items-center gap-1">
@@ -437,6 +459,13 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
                 </>
               ) : null}
             </div>
+            <p className="mt-2 max-w-2xl text-[11px] leading-relaxed text-slate-500">
+              Bidders use their own wallets on the same cluster as this app. Share the invite link (or browse{" "}
+              <Link href="/auctions" className="text-violet-400/90 hover:text-violet-300">
+                Auctions
+              </Link>
+              ); bid amounts stay sealed until the authority reveals.
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -455,6 +484,18 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
           </div>
         </div>
       </div>
+
+      {listingHeroSrc ? (
+        <div className="mx-auto mt-6 w-full max-w-[1400px] px-4 sm:px-6 lg:px-8">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-[0_0_40px_rgba(99,102,241,0.12)]">
+            <SafeRemoteImage
+              src={listingHeroSrc}
+              alt={snapshot?.title?.trim() ? snapshot.title.trim() : "Listing"}
+              className="max-h-[min(420px,52vh)] w-full object-cover"
+            />
+          </div>
+        </div>
+      ) : null}
 
       {/* Main grid */}
       <div className="mx-auto mt-8 grid w-full max-w-[1400px] gap-6 px-4 pb-12 sm:px-6 lg:grid-cols-[1.4fr_1fr] lg:gap-8 lg:px-8">

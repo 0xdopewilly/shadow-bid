@@ -134,6 +134,10 @@
         {
           "name": "description",
           "type": "string"
+        },
+        {
+          "name": "image_uri",
+          "type": "string"
         }
       ]
     },
@@ -943,6 +947,11 @@
       "code": 6009,
       "name": "DescriptionTooLong",
       "msg": "Auction description too long (max 256 bytes UTF-8)"
+    },
+    {
+      "code": 6010,
+      "name": "ImageUriTooLong",
+      "msg": "Auction image URL too long (max 200 bytes UTF-8)"
     }
   ],
   "types": [
@@ -1052,6 +1061,13 @@
           },
           {
             "name": "description",
+            "type": "string"
+          },
+          {
+            "name": "image_uri",
+            "docs": [
+              "Optional HTTPS / ipfs URL for listing imagery (UTF-8, max 200 bytes)."
+            ],
             "type": "string"
           }
         ]
