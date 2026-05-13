@@ -180,7 +180,8 @@ export async function initComputationDefinition(
   }
 
   const raw = await fetchCircuitFromOrigin(circuitName);
-  await uploadCircuit(provider, circuitName, program.programId, raw, false);
+  // Avoid default chunkSize (500 parallel txs) — public RPC / Helius will 429.
+  await uploadCircuit(provider, circuitName, program.programId, raw, false, 4);
 }
 
 /**

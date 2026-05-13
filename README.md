@@ -59,6 +59,8 @@ Learn more about Arcis types at [Arcis Types](https://docs.arcium.com/developers
 - **`programs/shadow_bid`** — Anchor program (`create_auction`, `place_bid`, `set_auction_deadline`, `reveal_winner`, comp-def inits).
 - **`encrypted-ixs`** — Arcis circuits (`init_auction_state`, `place_bid`, `reveal_winner`).
 - **`web`** — Next.js UI (`/auctions`, `/auctions/[pda]`, `/about`, `/dashboard`).
+- **`scripts/init-mxe-circuits.ts`** — One-shot Devnet helper: creates MXE computation definitions (if missing) and uploads `build/*.arcis` (idempotent; see env vars in the file).
+- **`scripts/dev.sh`** — Optional local stack: `arcium localnet` + Next (`web` → `yarn dev:full`). Not a substitute for public Devnet hosting.
 - **`tests/shadow_bid.ts`** — Integration test for create → bid → finalize path.
 
 ---
@@ -79,19 +81,58 @@ To refresh bundled IDL/types/circuits for the web app:
 arcium build && cd web && yarn copy:artifacts
 ```
 
-Requires Node **≥ 20** (see `web/package.json` and `web/.nvmrc`). Pushes to **`main`** run **GitHub Actions** over `web` (`yarn build`).
+Requires Node **≥ 20.18** (see repo `engines` / `web/.nvmrc`). Prefer a current **Node 22** runtime when running `yarn init:mxe-circuits` so toolchain warnings stay minimal.
+
+Pushes to **`main`** run **GitHub Actions** over `web` (`yarn build`).
+
+---
+
+## Devnet checklist (program → MXE circuits → frontend)
+
+Rough order:
+
+1. **`arcium build`** — Generates `target/idl`, `target/types`, **`build/*.arcis`**.
+2. **`arcium deploy`** (Devnet target in your `.env`/CLI config) — Publishes the Anchor program + Arcium MXE wiring. **Costs SOL** (program data + rents). Only repeat when upgrading the binary.
+3. **`yarn init:mxe-circuits`** — Separate step: uploads the **encrypted circuit blobs** referenced by computation definitions (`place_bid` alone is ~2 MB raw data and can consume **multiple SOL** in rent across many txs on first provisioning). Safe to rerun: comp‑def **`init*`** txs skip once accounts exist.
+
+```bash
+# From repo root (after yarn install + arcium build)
+export SOLANA_RPC_URL='https://devnet.helius-rpc.com/?api-key=YOUR_API_KEY_HERE'
+export SOLANA_KEYPAIR_PATH="$HOME/.config/solana/id.json"   # default; MXE authority must sign
+
+# @arcium-hq/client defaulted to 500 parallel upload txs → public RPC Helius bursts 429.
+# This repo lowers the default batch size to 4; reduce further if needed:
+export MXE_UPLOAD_PARALLEL=2   # or 1 under heavy limits
+
+yarn init:mxe-circuits
+```
+
+Use **any reliable Devnet RPC** (premium providers strongly recommended during uploads). Rotate API keys leaked in logs or chats.
+
+Canonical **demo / reference** identifiers for this checkout (change if you redeploy elsewhere):
+
+| Setting | Reference value |
+|---------|----------------|
+| **`NEXT_PUBLIC_SHADOW_BID_PROGRAM_ID`** | `EvyVpkAWdKABJAZZ73YkMwGiVS3QJMEJ7vHvKh6FYuBt` |
+| **`NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET` (Devnet)** | **`456`** (see `Arcium.toml` `[clusters.devnet]` — use **`0` only for local `arcium localnet`**). |
+
+Mirror these in **`web/.env.local`** for local previews and **Vercel → Environment Variables**.
 
 ---
 
 ## Deploying the web app (e.g. Vercel)
 
-1. Deploy the program + Arcium MXE resources to your cluster (e.g. Devnet) and keep **`web/lib/idl/shadow_bid.json`** in sync with that build.
-2. Set environment variables (Vercel **or** `web/.env.local`):
-   - `NEXT_PUBLIC_SITE_URL` — public origin (for absolute links / assets).
-   - `NEXT_PUBLIC_SOLANA_RPC_URL` — shared RPC for all users (default devnet in code if unset).
-   - `NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET` — must match your MXE deployment.
-   - `NEXT_PUBLIC_SHADOW_BID_PROGRAM_ID` — must match the IDL.
-3. `cd web && yarn install && yarn build` (CI does this on every PR/push to `main`).
+1. Complete **Devnet checklist** above (IDL + **`build/*.arcis`** uploaded via `yarn init:mxe-circuits`). Keep **`web/lib/idl/shadow_bid.json`** and bundled types in sync (`arcium build` then `web` **`yarn copy:artifacts`**).
+2. Set environment variables (Vercel **or** copy from **`web/.env.local.example`** into `web/.env.local`):
+
+   | Variable | Purpose |
+   |----------|---------|
+   | `NEXT_PUBLIC_SITE_URL` | Public origin (`https://…vercel.app`) for absolute links. |
+   | `NEXT_PUBLIC_SOLANA_RPC_URL` | Shared Devnet RPC for every visitor (**same RPC** ⇒ consistent cluster state). |
+   | `NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET` | MXE cluster offset — **`456`** for public Devnet in this repo. |
+   | `NEXT_PUBLIC_SHADOW_BID_PROGRAM_ID` | Matches `declare_id!` / IDL. |
+
+3. `cd web && yarn install && yarn build` — GitHub Actions runs this on PRs/pushes touching `web`.
 
 ---
 

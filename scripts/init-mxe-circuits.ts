@@ -11,6 +11,8 @@
  * Env:
  *   SOLANA_RPC_URL        (default http://127.0.0.1:8899)
  *   SOLANA_KEYPAIR_PATH   (default ~/.config/solana/id.json)
+ *   MXE_UPLOAD_PARALLEL   (default 4) concurrent raw-circuit txs per batch.
+ *                         @arcium-hq/client defaults to 500, which trips Helius/public RPC 429s — keep this low.
  */
 import * as anchor from "@coral-xyz/anchor";
 import { Idl, Program } from "@coral-xyz/anchor";
@@ -39,6 +41,12 @@ const CIRCUITS = [
   "place_bid",
   "reveal_winner",
 ] as const;
+
+/** Arcium `uploadCircuit` default chunkSize is 500 — too many concurrent RPCs for most providers. */
+const MXE_UPLOAD_PARALLEL = Math.max(
+  1,
+  parseInt(process.env.MXE_UPLOAD_PARALLEL ?? "4", 10) || 4
+);
 
 function loadKeypair(p: string): anchor.web3.Keypair {
   const secret = JSON.parse(fs.readFileSync(p, "utf8"));
@@ -135,9 +143,22 @@ async function main() {
         `Missing ${arcisPath} — run \`arcium build\` from the repo root.`
       );
     }
-    process.stdout.write(`→ ${circuitName} (upload .arcis)… `);
+    const lamports = await connection.getBalance(wallet.publicKey, "confirmed");
+    process.stdout.write(
+      `→ ${circuitName} (upload .arcis, payer ~${(
+        lamports / anchor.web3.LAMPORTS_PER_SOL
+      ).toFixed(4)} SOL)… `
+    );
     const raw = new Uint8Array(fs.readFileSync(arcisPath));
-    await uploadCircuit(provider, circuitName, program.programId, raw, false);
+    await uploadCircuit(
+      provider,
+      circuitName,
+      program.programId,
+      raw,
+      false,
+      MXE_UPLOAD_PARALLEL,
+      rpcOpts
+    );
     console.log("ok");
   }
 
