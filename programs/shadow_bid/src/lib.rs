@@ -296,6 +296,13 @@ pub mod shadow_bid {
         let winner = Pubkey::new_from_array(winner_bytes);
 
         let auction = &mut ctx.accounts.auction;
+        // Empty auctions must reveal as zero bid + default pubkey. Anything else means
+        // the MPC/plaintext layout diverged — do not persist junk `winning_bid` / `winner`.
+        if auction.bid_count == 0 {
+            require!(winning_bid == 0, ErrorCode::InvalidRevealOutput);
+            require!(winner == Pubkey::default(), ErrorCode::InvalidRevealOutput);
+        }
+
         auction.revealed = true;
         auction.winning_bid = winning_bid;
         auction.winner = winner;
@@ -639,4 +646,6 @@ pub enum ErrorCode {
     DescriptionTooLong,
     #[msg("Auction image URL too long (max 200 bytes UTF-8)")]
     ImageUriTooLong,
+    #[msg("Reveal output inconsistent with sealed bid history")]
+    InvalidRevealOutput,
 }

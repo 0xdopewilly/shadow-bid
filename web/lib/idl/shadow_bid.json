@@ -960,6 +960,11 @@
       "code": 6010,
       "name": "ImageUriTooLong",
       "msg": "Auction image URL too long (max 200 bytes UTF-8)"
+    },
+    {
+      "code": 6011,
+      "name": "InvalidRevealOutput",
+      "msg": "Reveal output inconsistent with sealed bid history"
     }
   ],
   "types": [

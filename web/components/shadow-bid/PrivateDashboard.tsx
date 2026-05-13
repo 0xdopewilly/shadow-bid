@@ -6,6 +6,7 @@ import {
   markBidRentClaimed,
   type StoredBid,
 } from "@/lib/shadow-bid/userBids";
+import { lamportsToSolDisplay } from "@/lib/shadow-bid/lamportsDisplay";
 import { isLocalSolanaRpc } from "@/lib/solana/cluster";
 import {
   Coins,
@@ -24,17 +25,6 @@ interface Props {
   /** Optional: reclaim rent after a finalized computation; returns transaction signature. */
   reclaimRent?: (computationOffset: string) => Promise<string>;
   className?: string;
-}
-
-function lamportsToSol(lamports: string): string {
-  try {
-    const n = Number(BigInt(lamports));
-    return (n / 1e9).toLocaleString(undefined, {
-      maximumFractionDigits: 9,
-    });
-  } catch {
-    return "—";
-  }
 }
 
 function explorerUrl(rpcEndpoint: string, sig: string): string {
@@ -134,7 +124,7 @@ export function PrivateDashboard({
         <Coins className="h-3.5 w-3.5 text-violet-300" />
         Total submitted{" "}
         <span className="font-mono text-violet-200">
-          {lamportsToSol(total.toString())} SOL
+          {lamportsToSolDisplay(total.toString())} SOL
         </span>
         <span className="text-slate-600">·</span>
         <span>{bids.length} sealed bid{bids.length === 1 ? "" : "s"}</span>

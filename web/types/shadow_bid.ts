@@ -966,6 +966,11 @@ export type ShadowBid = {
       "code": 6010,
       "name": "imageUriTooLong",
       "msg": "Auction image URL too long (max 200 bytes UTF-8)"
+    },
+    {
+      "code": 6011,
+      "name": "invalidRevealOutput",
+      "msg": "Reveal output inconsistent with sealed bid history"
     }
   ],
   "types": [

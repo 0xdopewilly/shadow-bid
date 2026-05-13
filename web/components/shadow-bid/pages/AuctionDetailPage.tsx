@@ -14,6 +14,7 @@ import {
   revealWinnerFlow,
   setAuctionDeadlineFlow,
 } from "@/lib/shadow-bid/flows";
+import { lamportsToSolDisplayWithSuffix } from "@/lib/shadow-bid/lamportsDisplay";
 import { isLocalSolanaRpc } from "@/lib/solana/cluster";
 import {
   addUserBid,
@@ -70,16 +71,6 @@ function timeAgo(ts: number) {
   if (s < 60) return `${s}s ago`;
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   return `${Math.floor(s / 3600)}h ago`;
-}
-
-function lamportsStrToSol(s: string) {
-  try {
-    return (Number(BigInt(s)) / 1e9).toLocaleString(undefined, {
-      maximumFractionDigits: 9,
-    });
-  } catch {
-    return "—";
-  }
 }
 
 function explorerTxUrl(rpcEndpoint: string, sig: string): string {
@@ -548,7 +539,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
                   {truncateMid(snapshot.winnerB58, 6, 6)}
                 </code>
                 <span className="font-mono text-2xl text-fuchsia-100">
-                  {lamportsStrToSol(snapshot.winningBidLamports)} SOL
+                  {lamportsToSolDisplayWithSuffix(snapshot.winningBidLamports)}
                 </span>
               </div>
               <p className="mt-2 text-[11px] text-amber-200/70">
@@ -556,6 +547,12 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
                 <code className="rounded bg-black/40 px-1 text-amber-100">reveal_winner</code>.
                 Losing amounts remain sealed forever.
               </p>
+              {snapshot.bidCount === 0 ? (
+                <p className="mt-2 text-[11px] text-amber-300/85">
+                  MXE-confirmed bid count is still zero — an enormous SOL figure means this reveal was
+                  persisted incorrectly on-chain. Ignore it for settlement; create a new listing after upgrading.
+                </p>
+              ) : null}
             </motion.div>
           ) : null}
 

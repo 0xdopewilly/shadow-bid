@@ -1,5 +1,6 @@
 "use client";
 
+import { lamportsToSolDisplayWithSuffix } from "@/lib/shadow-bid/lamportsDisplay";
 import { AnimatePresence, motion } from "framer-motion";
 import { Crown, Loader2, Lock, Sparkles, Trophy, X } from "lucide-react";
 import { useEffect, useMemo } from "react";
@@ -27,21 +28,6 @@ interface Props {
   triggering?: boolean;
   /** Whether MXE is ready (so the trigger button can enable). */
   mxeReady?: boolean;
-}
-
-function lamportsToSol(l: bigint): string {
-  return (Number(l) / 1e9).toLocaleString(undefined, {
-    maximumFractionDigits: 9,
-  });
-}
-
-function lamportsStrToSol(l: string | null): string {
-  if (l == null) return "—";
-  try {
-    return lamportsToSol(BigInt(l));
-  } catch {
-    return "—";
-  }
 }
 
 function shortPk(b58: string): string {
@@ -194,7 +180,9 @@ export function RevealModal({
                 <div className="mt-3 flex items-center justify-between gap-2 text-sm">
                   <span className="text-slate-400">Winning bid</span>
                   <span className="font-mono text-lg text-fuchsia-100">
-                    {lamportsStrToSol(winningBidLamports)} SOL
+                    {winningBidLamports != null
+                      ? lamportsToSolDisplayWithSuffix(winningBidLamports)
+                      : "— SOL"}
                   </span>
                 </div>
               </motion.div>
@@ -222,7 +210,7 @@ export function RevealModal({
                 <span className="text-slate-400">Your highest sealed bid</span>
                 <span className="font-mono text-fuchsia-200">
                   {myHighestLamports != null
-                    ? `${lamportsToSol(myHighestLamports)} SOL`
+                    ? lamportsToSolDisplayWithSuffix(myHighestLamports)
                     : "none on this device"}
                 </span>
               </motion.div>

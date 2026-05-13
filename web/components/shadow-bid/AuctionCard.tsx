@@ -2,6 +2,7 @@
 
 import { SafeRemoteImage } from "@/components/shadow-bid/SafeRemoteImage";
 import { listingImageSrc, type AuctionListEntry } from "@/lib/shadow-bid/flows";
+import { lamportsToSolDisplayWithSuffix } from "@/lib/shadow-bid/lamportsDisplay";
 import { motion } from "framer-motion";
 import { Crown, Lock, Trophy, User as UserIcon } from "lucide-react";
 import Link from "next/link";
@@ -9,16 +10,6 @@ import Link from "next/link";
 function shortPk(b58: string, a = 4, b = 4) {
   if (b58.length <= a + b + 1) return b58;
   return `${b58.slice(0, a)}…${b58.slice(-b)}`;
-}
-
-function lamportsToSolStr(s: string) {
-  try {
-    return (Number(BigInt(s)) / 1e9).toLocaleString(undefined, {
-      maximumFractionDigits: 9,
-    });
-  } catch {
-    return "—";
-  }
 }
 
 interface Props {
@@ -124,7 +115,7 @@ export function AuctionCard({ auction, isMine, showCta = true }: Props) {
               {shortPk(auction.winner.toBase58(), 6, 6)}
             </code>
             <span className="font-mono text-base text-fuchsia-100">
-              {lamportsToSolStr(auction.winningBid)} SOL
+              {lamportsToSolDisplayWithSuffix(auction.winningBid)}
             </span>
           </div>
         </div>
