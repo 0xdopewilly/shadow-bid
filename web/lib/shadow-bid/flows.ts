@@ -66,14 +66,60 @@ export function getReadOnlyShadowBidProgram(
   return getShadowBidProgram(provider);
 }
 
+export function listingIdLeBytes(listingId: bigint): Uint8Array {
+  const buf = new Uint8Array(8);
+  let n = listingId;
+  const mask = BigInt(255);
+  for (let i = 0; i < 8; i++) {
+    buf[i] = Number(n & mask);
+    n >>= BigInt(8);
+  }
+  return buf;
+}
+
+/** Auction PDA: `["auction", authority, listing_id (u64 LE)]`. */
 export function getAuctionPda(
   programId: PublicKey,
-  authority: PublicKey
+  authority: PublicKey,
+  listingId: bigint | number
 ): PublicKey {
-  return PublicKey.findProgramAddressSync(
+  const id =
+    typeof listingId === "bigint"
+      ? listingId
+      : BigInt(Number.isFinite(listingId) ? Math.floor(Number(listingId)) : 0);
+  const [pda] = PublicKey.findProgramAddressSync(
+    [
+      Buffer.from("auction"),
+      authority.toBuffer(),
+      Buffer.from(listingIdLeBytes(id)),
+    ],
+    programId
+  );
+  return pda;
+}
+
+/** Prior single-auction derivation (older deployments). */
+export function getLegacyAuctionPda(programId: PublicKey, authority: PublicKey): PublicKey {
+  const [pda] = PublicKey.findProgramAddressSync(
     [Buffer.from("auction"), authority.toBuffer()],
     programId
-  )[0];
+  );
+  return pda;
+}
+
+/** Smallest listing index whose canonical PDA is not in `existingAuctionPdas`. */
+export function pickUnusedListingIndex(
+  programId: PublicKey,
+  authority: PublicKey,
+  existingAuctionPdas: Iterable<PublicKey>
+): bigint | null {
+  const occupied = new Set([...existingAuctionPdas].map((k) => k.toBase58()));
+  const cap = BigInt(10000);
+  for (let id = BigInt(0); id <= cap; id += BigInt(1)) {
+    const pda = getAuctionPda(programId, authority, id);
+    if (!occupied.has(pda.toBase58())) return id;
+  }
+  return null;
 }
 
 export async function getMXEPublicKeyWithRetry(
@@ -253,11 +299,16 @@ export async function createAuctionFlow(
   provider: anchor.AnchorProvider,
   clusterOffset: number,
   authority: PublicKey,
-  meta: { title: string; description: string; imageUri?: string }
+  meta: {
+    title: string;
+    description: string;
+    imageUri?: string;
+    listingId: bigint;
+  }
 ): Promise<{ auction: PublicKey; computationOffset: anchor.BN }> {
   const computationOffset = new anchor.BN(Buffer.from(randomBytes(8)), "le");
   const clusterAccount = getClusterAccAddress(clusterOffset);
-  const auction = getAuctionPda(program.programId, authority);
+  const auction = getAuctionPda(program.programId, authority, meta.listingId);
 
   const title = truncateUtf8(
     meta.title.trim() || "Untitled auction",
@@ -267,7 +318,13 @@ export async function createAuctionFlow(
   const imageUri = truncateUtf8((meta.imageUri ?? "").trim(), 200);
 
   await program.methods
-    .createAuction(computationOffset, title, description, imageUri)
+    .createAuction(
+      computationOffset,
+      new anchor.BN(meta.listingId.toString()),
+      title,
+      description,
+      imageUri
+    )
     .accountsPartial({
       authority,
       auction,

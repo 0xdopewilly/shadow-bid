@@ -170,8 +170,10 @@ describe("shadow_bid (Arcium blind auction)", () => {
 
   it("creates auction and accepts an encrypted bid", async () => {
     const createComputationOffset = new anchor.BN(randomBytes(8), "hex");
+    const lid = Buffer.alloc(8);
+    lid.writeBigUInt64LE(BigInt(0), 0);
     const [auctionPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("auction"), owner.publicKey.toBuffer()],
+      [Buffer.from("auction"), owner.publicKey.toBuffer(), lid],
       program.programId
     );
 
@@ -180,6 +182,7 @@ describe("shadow_bid (Arcium blind auction)", () => {
     await program.methods
       .createAuction(
         createComputationOffset,
+        new anchor.BN(0),
         "ShadowBid test lot",
         "Sealed-bid integration test auction.",
         ""

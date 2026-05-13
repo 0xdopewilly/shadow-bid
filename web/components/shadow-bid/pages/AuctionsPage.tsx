@@ -6,7 +6,7 @@ import { useShadowBid } from "@/components/shadow-bid/ShadowBidContext";
 import type { AuctionListEntry } from "@/lib/shadow-bid/flows";
 import {
   createAuctionFlow,
-  getAuctionPda,
+  pickUnusedListingIndex,
   listingImageSrc,
   setAuctionDeadlineFlow,
 } from "@/lib/shadow-bid/flows";
@@ -143,16 +143,21 @@ export function AuctionsPage() {
     sortNowSec,
   ]);
 
-  const myAuctionPda = useMemo(() => {
-    if (!publicKey || !program) return null;
-    return getAuctionPda(program.programId, publicKey);
-  }, [publicKey, program]);
+  const sellerListingCount = useMemo(
+    () =>
+      walletPk
+        ? allAuctions.filter((a) => a.authority.toBase58() === walletPk).length
+        : 0,
+    [allAuctions, walletPk]
+  );
 
-  const myAuctionExists = useMemo(() => {
-    if (!myAuctionPda) return false;
-    const k = myAuctionPda.toBase58();
-    return allAuctions.some((a) => a.pda.toBase58() === k);
-  }, [myAuctionPda, allAuctions]);
+  const nextListingIndex = useMemo(() => {
+    if (!publicKey || !program) return null;
+    const minePdAs = allAuctions
+      .filter((a) => a.authority.toBase58() === publicKey.toBase58())
+      .map((a) => a.pda);
+    return pickUnusedListingIndex(program.programId, publicKey, minePdAs);
+  }, [publicKey, program, allAuctions]);
 
   const submitCreate = useCallback(async () => {
     if (!program || !provider || !publicKey)
@@ -168,12 +173,21 @@ export function AuctionsPage() {
     }
     setCreating(true);
     try {
+      if (nextListingIndex === null) {
+        pushToast({
+          kind: "warn",
+          title: "Too many auctions",
+          body: "This wallet exhausted the scanned listing-index range — contact support.",
+        });
+        return;
+      }
       const { auction } = await createAuctionFlow(
         program,
         provider,
         clusterOffset,
         publicKey,
         {
+          listingId: nextListingIndex,
           title: draftTitle,
           description: draftDescription,
           imageUri: trimmedImg,
@@ -218,6 +232,7 @@ export function AuctionsPage() {
       setCreating(false);
     }
   }, [
+    nextListingIndex,
     program,
     provider,
     publicKey,
@@ -247,13 +262,18 @@ export function AuctionsPage() {
               <motion.button
                 type="button"
                 onClick={() => setCreateOpen(true)}
-                disabled={creating || !program || rpcReachable === false || myAuctionExists}
+                disabled={
+                  creating ||
+                  !program ||
+                  rpcReachable === false ||
+                  nextListingIndex === null
+                }
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 className="inline-flex items-center gap-2 rounded-full border border-violet-400/40 bg-gradient-to-r from-violet-600 via-fuchsia-600 to-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_0_28px_rgba(192,38,211,0.45)] disabled:opacity-50"
                 title={
-                  myAuctionExists
-                    ? "You already have an auction (1 PDA per wallet); open it from the cards below"
+                  nextListingIndex === null && program && rpcReachable !== false
+                    ? "No free listing slots in the scanned index range."
                     : undefined
                 }
               >
@@ -262,7 +282,7 @@ export function AuctionsPage() {
                 ) : (
                   <Zap className="h-4 w-4" />
                 )}
-                {myAuctionExists ? "You already have an auction" : "Create new auction"}
+                Create new auction
               </motion.button>
             ) : (
               <button
@@ -384,7 +404,7 @@ export function AuctionsPage() {
         {filtered.length === 0 ? (
           <EmptyState
             connected={connected}
-            hasMine={myAuctionExists}
+            hasMine={sellerListingCount > 0}
             filter={filter}
           />
         ) : (

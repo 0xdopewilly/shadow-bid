@@ -33,9 +33,11 @@ pub mod shadow_bid {
         Ok(())
     }
 
+    #[allow(unused_variables)]
     pub fn create_auction(
         ctx: Context<CreateAuction>,
         computation_offset: u64,
+        listing_id: u64,
         title: String,
         description: String,
         image_uri: String,
@@ -345,7 +347,7 @@ pub struct Auction {
 
 #[queue_computation_accounts("init_auction_state", authority)]
 #[derive(Accounts)]
-#[instruction(computation_offset: u64, title: String, description: String, image_uri: String)]
+#[instruction(computation_offset: u64, listing_id: u64, title: String, description: String, image_uri: String)]
 pub struct CreateAuction<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -353,7 +355,7 @@ pub struct CreateAuction<'info> {
         init,
         payer = authority,
         space = 8 + Auction::INIT_SPACE,
-        seeds = [b"auction", authority.key().as_ref()],
+        seeds = [b"auction", authority.key().as_ref(), &listing_id.to_le_bytes()],
         bump,
     )]
     pub auction: Box<Account<'info, Auction>>,

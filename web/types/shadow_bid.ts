@@ -51,6 +51,10 @@ export type ShadowBid = {
               {
                 "kind": "account",
                 "path": "authority"
+              },
+              {
+                "kind": "arg",
+                "path": "listingId"
               }
             ]
           }
@@ -131,6 +135,10 @@ export type ShadowBid = {
       "args": [
         {
           "name": "computationOffset",
+          "type": "u64"
+        },
+        {
+          "name": "listingId",
           "type": "u64"
         },
         {
@@ -1072,7 +1080,7 @@ export type ShadowBid = {
           {
             "name": "imageUri",
             "docs": [
-              "Optional HTTPS / ipfs URL for listing imagery (UTF-8, max 200 bytes)."
+              "Optional HTTPS / IPFS gateway URL for listing imagery (UTF-8, max 200 bytes)."
             ],
             "type": "string"
           }

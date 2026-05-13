@@ -116,8 +116,8 @@ export function DashboardPage() {
                 <div className="space-y-2 text-xs text-slate-500">
                   <p>
                     No auction account found for this wallet on the current cluster. If you had
-                    auctions before, the chain you&apos;re pointed at may have been{" "}
-                    <span className="text-slate-300">reset</span>.
+                    listings before, the chain you&apos;re pointed at may have been{" "}
+                    <span className="text-slate-300">reset</span> or migrated to newer PDAs.
                   </p>
                   {isLocalLikeRpc ? (
                     <p className="rounded-lg border border-white/[0.06] bg-black/20 p-2 text-[11px] leading-relaxed text-slate-400">
@@ -126,7 +126,7 @@ export function DashboardPage() {
                       <Link href="/auctions" className="text-violet-300/90 hover:text-violet-200">
                         Auctions
                       </Link>
-                      ; there is still one auction PDA per authority on the new ledger.
+                      . Sellers can anchor multiple auctions with distinct PDAs keyed by listing index.
                     </p>
                   ) : (
                     <p>
@@ -134,7 +134,7 @@ export function DashboardPage() {
                       <Link href="/auctions" className="text-violet-300/90 hover:text-violet-200">
                         Auctions
                       </Link>{" "}
-                      to create one — one PDA per wallet.
+                      to create one — sellers can operate several listings concurrently.
                     </p>
                   )}
                 </div>

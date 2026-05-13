@@ -45,6 +45,10 @@
               {
                 "kind": "account",
                 "path": "authority"
+              },
+              {
+                "kind": "arg",
+                "path": "listing_id"
               }
             ]
           }
@@ -125,6 +129,10 @@
       "args": [
         {
           "name": "computation_offset",
+          "type": "u64"
+        },
+        {
+          "name": "listing_id",
           "type": "u64"
         },
         {
@@ -1066,7 +1074,7 @@
           {
             "name": "image_uri",
             "docs": [
-              "Optional HTTPS / ipfs URL for listing imagery (UTF-8, max 200 bytes)."
+              "Optional HTTPS / IPFS gateway URL for listing imagery (UTF-8, max 200 bytes)."
             ],
             "type": "string"
           }
