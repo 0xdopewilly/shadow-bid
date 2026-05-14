@@ -23,6 +23,11 @@ import {
 } from "@arcium-hq/client";
 import type { ShadowBid } from "@/types/shadow_bid";
 import idlJson from "@/lib/idl/shadow_bid.json";
+import {
+  isTransientRpcLikeError,
+  sleep,
+  withRetry,
+} from "@/lib/shadow-bid/asyncResilience";
 import { randomBytes } from "@/lib/shadow-bid/random";
 import { isRpcReachable } from "@/lib/solana/rpcHealth";
 import { Buffer } from "buffer";
@@ -153,10 +158,44 @@ export function pickUnusedListingIndex(
   return null;
 }
 
+async function awaitComputationFinalizationResilient(
+  provider: anchor.AnchorProvider,
+  computationOffset: anchor.BN,
+  programId: PublicKey
+) {
+  await withRetry(
+    () =>
+      awaitComputationFinalization(
+        provider,
+        computationOffset,
+        programId,
+        "confirmed"
+      ),
+    {
+      maxAttempts: 4,
+      delaysMs: [2000, 4500, 8000],
+      shouldRetry: (e) => {
+        const raw = e instanceof Error ? e.message : String(e);
+        if (
+          /aborted|AbortedComputation|6000|verification failed|invalid proof/i.test(
+            raw
+          )
+        ) {
+          return false;
+        }
+        return (
+          isTransientRpcLikeError(e) ||
+          /timeout|timed out|not finalized|still|pending|waiting/i.test(raw)
+        );
+      },
+    }
+  );
+}
+
 export async function getMXEPublicKeyWithRetry(
   connection: Connection,
   programId: PublicKey,
-  maxRetries = 8,
+  maxRetries = 12,
   retryDelayMs = 500
 ): Promise<Uint8Array> {
   if (!(await isRpcReachable(connection))) {
@@ -188,7 +227,11 @@ export async function getMXEPublicKeyWithRetry(
       throw new Error(
         "MXE public key not available yet — deploy your program + MXE on this cluster (same as `arcium test`)."
       );
-    await new Promise((r) => setTimeout(r, retryDelayMs));
+    const delay = Math.min(
+      4000,
+      Math.round(retryDelayMs * Math.pow(1.4, attempt - 1))
+    );
+    await sleep(delay);
   }
   throw new Error("unreachable");
 }
@@ -374,11 +417,10 @@ export async function createAuctionFlow(
     })
     .rpc({ commitment: "confirmed", skipPreflight: true });
 
-  await awaitComputationFinalization(
+  await awaitComputationFinalizationResilient(
     provider,
     computationOffset,
-    program.programId,
-    "confirmed"
+    program.programId
   );
 
   return { auction, computationOffset };
@@ -442,11 +484,10 @@ export async function placeBidFlow(
     })
     .rpc({ commitment: "confirmed", skipPreflight: true });
 
-  await awaitComputationFinalization(
+  await awaitComputationFinalizationResilient(
     provider,
     bidComputationOffset,
-    program.programId,
-    "confirmed"
+    program.programId
   );
 
   return { txSig, computationOffset: bidComputationOffset };
@@ -501,11 +542,10 @@ export async function revealWinnerFlow(
     })
     .rpc({ commitment: "confirmed", skipPreflight: true });
 
-  await awaitComputationFinalization(
+  await awaitComputationFinalizationResilient(
     provider,
     computationOffset,
-    program.programId,
-    "confirmed"
+    program.programId
   );
 
   return { txSig, computationOffset };
@@ -664,49 +704,80 @@ export async function fetchAllAuctions(
 
 /**
  * Poll until `bid_count` exceeds `below` or `timeoutMs` elapses (Arcium MXC finalization).
+ * Uses faster polling for the first minute, then backs off to reduce RPC load.
  */
 export async function waitForAuctionBidCountAbove(
   program: ShadowBidProgram,
   auction: PublicKey,
   below: number,
-  opts?: { timeoutMs?: number; pollMs?: number }
+  opts?: {
+    timeoutMs?: number;
+    /** After this elapsed time, switch from `fastPollMs` to `slowPollMs`. */
+    fastPollUntilMs?: number;
+    fastPollMs?: number;
+    slowPollMs?: number;
+    /** @deprecated Prefer `slowPollMs`. */
+    pollMs?: number;
+  }
 ): Promise<number | null> {
-  const timeoutMs = opts?.timeoutMs ?? 120_000;
-  const pollMs = opts?.pollMs ?? 2500;
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
+  const timeoutMs = opts?.timeoutMs ?? 180_000;
+  const fastUntil = opts?.fastPollUntilMs ?? 45_000;
+  const fastPollMs = opts?.fastPollMs ?? 900;
+  const slowPollMs = opts?.slowPollMs ?? opts?.pollMs ?? 2200;
+  const t0 = Date.now();
+
+  while (Date.now() - t0 < timeoutMs) {
     const data = await fetchAuctionAccount(program, auction);
     if (data != null && data.bidCount > below) return data.bidCount;
-    await new Promise((r) => setTimeout(r, pollMs));
+    const elapsed = Date.now() - t0;
+    const wait = elapsed < fastUntil ? fastPollMs : slowPollMs;
+    await sleep(wait);
   }
   return null;
+}
+
+function isAuctionAccountMissingError(message: string): boolean {
+  return /Account does not exist|could not find account|Invalid account discriminator|AccountNotFound/i.test(
+    message
+  );
 }
 
 export async function fetchAuctionAccount(
   program: ShadowBidProgram,
   auction: PublicKey
 ): Promise<AuctionAccountData | null> {
-  try {
-    const acc = await program.account.auction.fetch(auction);
-    const flat = new Uint8Array(96);
-    for (let i = 0; i < 3; i++) {
-      const chunk = acc.encryptedState[i] as unknown as number[];
-      flat.set(Uint8Array.from(chunk), i * 32);
+  const maxAttempts = 4;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const acc = await program.account.auction.fetch(auction);
+      const flat = new Uint8Array(96);
+      for (let i = 0; i < 3; i++) {
+        const chunk = acc.encryptedState[i] as unknown as number[];
+        flat.set(Uint8Array.from(chunk), i * 32);
+      }
+      return {
+        bidCount: coerceAnchorU32(acc.bidCount as unknown),
+        stateNonce: acc.stateNonce.toString(),
+        authority: acc.authority,
+        encryptedStateBytes: flat,
+        revealed: acc.revealed,
+        winningBid: acc.winningBid.toString(),
+        winner: acc.winner,
+        biddingEndsAt: Number(acc.biddingEndsAt.toString()),
+        title: acc.title ?? "",
+        description: acc.description ?? "",
+        imageUri: acc.imageUri ?? "",
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (isAuctionAccountMissingError(msg)) return null;
+      if (attempt < maxAttempts - 1 && isTransientRpcLikeError(e)) {
+        await sleep(200 * (attempt + 1));
+        continue;
+      }
+      return null;
     }
-    return {
-      bidCount: coerceAnchorU32(acc.bidCount as unknown),
-      stateNonce: acc.stateNonce.toString(),
-      authority: acc.authority,
-      encryptedStateBytes: flat,
-      revealed: acc.revealed,
-      winningBid: acc.winningBid.toString(),
-      winner: acc.winner,
-      biddingEndsAt: Number(acc.biddingEndsAt.toString()),
-      title: acc.title ?? "",
-      description: acc.description ?? "",
-      imageUri: acc.imageUri ?? "",
-    };
-  } catch {
-    return null;
   }
+  return null;
 }

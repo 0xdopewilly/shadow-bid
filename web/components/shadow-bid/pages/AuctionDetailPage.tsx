@@ -151,7 +151,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
 
   useEffect(() => {
     void refresh();
-    const t = setInterval(() => void refresh(), 7000);
+    const t = setInterval(() => void refresh(), 5500);
     return () => clearInterval(t);
   }, [refresh]);
 
@@ -305,7 +305,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
         body: "Watching on-chain bid_count until Arcium finalizes…",
       });
       setBidInput("");
-      setBusy("Awaiting MXC finalization (up to ~2 min)…");
+      setBusy("Awaiting MXC finalization (up to ~3 min)…");
       const raised = await waitForAuctionBidCountAbove(
         program,
         auctionKey,
@@ -327,6 +327,8 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
         });
       }
       await refresh();
+      window.setTimeout(() => void refresh(), 2200);
+      window.setTimeout(() => void refresh(), 6500);
     } finally {
       setBusy(null);
     }

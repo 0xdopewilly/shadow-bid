@@ -12,6 +12,10 @@ import {
   type ShadowBidProgram,
   type AuctionListEntry,
 } from "@/lib/shadow-bid/flows";
+import {
+  isTransientRpcLikeError,
+  withRetry,
+} from "@/lib/shadow-bid/asyncResilience";
 import { getArciumClusterOffset } from "@/lib/solana/env";
 import { isLocalSolanaRpc } from "@/lib/solana/cluster";
 import {
@@ -303,7 +307,11 @@ export function ShadowBidProvider({ children }: { children: ReactNode }) {
     }
     setAuctionsLoading(true);
     try {
-      const list = await fetchAllAuctions(program);
+      const list = await withRetry(() => fetchAllAuctions(program), {
+        maxAttempts: 3,
+        delaysMs: [400, 1200, 2400],
+        shouldRetry: isTransientRpcLikeError,
+      });
       setAllAuctions(list);
     } catch {
       // Keep the last successful list during flaky RPC so the UI doesn't look

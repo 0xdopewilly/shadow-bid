@@ -4,17 +4,26 @@ import { isDevnetRpc, isLocalSolanaRpc } from "@/lib/solana/cluster";
 /** Quick check that the RPC accepts JSON-RPC (validator / proxy is up). */
 export async function isRpcReachable(
   connection: Connection,
-  timeoutMs = 4500
+  timeoutMs = 8000
 ): Promise<boolean> {
-  const ping = connection.getLatestBlockhash("processed");
-  const timeout = new Promise<never>((_, rej) =>
-    setTimeout(() => rej(new Error("timeout")), timeoutMs)
-  );
-  try {
+  const once = async () => {
+    const ping = connection.getLatestBlockhash("processed");
+    const timeout = new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error("timeout")), timeoutMs)
+    );
     await Promise.race([ping, timeout]);
+  };
+  try {
+    await once();
     return true;
   } catch {
-    return false;
+    await new Promise((r) => setTimeout(r, 500));
+    try {
+      await once();
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
