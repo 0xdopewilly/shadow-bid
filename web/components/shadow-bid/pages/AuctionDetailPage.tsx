@@ -16,7 +16,7 @@ import {
   listingImageSrc,
   placeBidFlow,
   revealWinnerSubmitTx,
-  awaitRevealWinnerFinalized,
+  awaitRevealWinnerFinalizedOrPoll,
   setAuctionDeadlineFlow,
   waitForAuctionBidCountAbove,
 } from "@/lib/shadow-bid/flows";
@@ -420,7 +420,35 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
     if (!program || !provider || !publicKey || !auctionKey)
       throw new Error("Wallet + auction required");
 
-    const MXE_WAIT_MS = 6 * 60 * 1000;
+    const latest = await fetchAuctionAccount(program, auctionKey);
+    if (!latest) {
+      pushToast({
+        kind: "warn",
+        title: "Auction account unavailable",
+        body: "RPC could not load this auction — check your cluster RPC URL.",
+      });
+      return;
+    }
+    if (latest.revealed) {
+      pushToast({
+        kind: "info",
+        title: "Already revealed",
+        body: "This listing is settled on-chain. Refresh if the UI is stale.",
+      });
+      void refresh();
+      return;
+    }
+    if (latest.biddingEndsAt > 0) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (nowSec < latest.biddingEndsAt) {
+        pushToast({
+          kind: "warn",
+          title: "Cannot reveal yet",
+          body: `On-chain bidding ends ${new Date(latest.biddingEndsAt * 1000).toLocaleString()}. The program rejects reveal_winner before then (DeadlineNotReached).`,
+        });
+        return;
+      }
+    }
 
     setRevealUiPhase("submit");
     setBusy("Queuing reveal…");
@@ -438,7 +466,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
       pushToast({
         kind: "info",
         title: "Reveal transaction landed",
-        body: "Waiting for MXC to finalize — often 1–3 minutes.",
+        body: "Waiting for MXE to finalize — often 1–3 minutes. You can close this modal; we keep polling the auction account.",
       });
     } catch (e) {
       reportError(e);
@@ -450,24 +478,13 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
 
     setRevealUiPhase("mxe");
     try {
-      await Promise.race([
-        awaitRevealWinnerFinalized(
-          provider,
-          computationOffset!,
-          program.programId
-        ),
-        new Promise<never>((_, rej) =>
-          setTimeout(
-            () =>
-              rej(
-                new Error(
-                  "MXE finalization is taking longer than expected. Check Solana Explorer for your reveal transaction — the auction may still update when MXC completes."
-                )
-              ),
-            MXE_WAIT_MS
-          )
-        ),
-      ]);
+      await awaitRevealWinnerFinalizedOrPoll(
+        provider,
+        program,
+        auctionKey,
+        computationOffset!,
+        { timeoutMs: 10 * 60_000, pollMs: 1200 }
+      );
       pushToast({
         kind: "info",
         title: "Reveal finalized",

@@ -574,7 +574,7 @@ export async function revealWinnerSubmitTx(
   return { txSig, computationOffset };
 }
 
-/** After {@link revealWinnerSubmitTx}, wait for MXC callback onto the auction account. */
+/** After {@link revealWinnerSubmitTx}, wait for MXE callback onto the auction account. */
 export async function awaitRevealWinnerFinalized(
   provider: anchor.AnchorProvider,
   computationOffset: anchor.BN,
@@ -584,6 +584,59 @@ export async function awaitRevealWinnerFinalized(
     provider,
     computationOffset,
     programId
+  );
+}
+
+/**
+ * Waits for `reveal_winner` to settle: Arcium's waiter often matches chain reality,
+ * but it can hang while `auction.revealed` is already true on RPC — so we race RPC polls.
+ */
+export async function awaitRevealWinnerFinalizedOrPoll(
+  provider: anchor.AnchorProvider,
+  program: ShadowBidProgram,
+  auction: PublicKey,
+  computationOffset: anchor.BN,
+  opts?: { timeoutMs?: number; pollMs?: number }
+): Promise<void> {
+  const timeoutMs = opts?.timeoutMs ?? 10 * 60_000;
+  const pollMs = opts?.pollMs ?? 1200;
+  const deadline = Date.now() + timeoutMs;
+
+  const stallForever = (): Promise<void> =>
+    new Promise(() => {
+      /* Arcium branch replaced after poll wins */
+    });
+
+  const arciumBranch = awaitRevealWinnerFinalized(
+    provider,
+    computationOffset,
+    program.programId
+  ).catch((err: unknown) => {
+    console.warn("[shadow-bid] awaitRevealWinnerFinalized:", err);
+    return stallForever();
+  });
+
+  const pollBranch = (async () => {
+    while (Date.now() < deadline) {
+      await sleep(pollMs);
+      const d = await fetchAuctionAccount(program, auction);
+      if (d?.revealed) return;
+    }
+    throw new Error(
+      "Reveal did not finalize on-chain in time. Most often: NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET does not match `arcium deploy -o …`, or MXE is not processing computations on this cluster. Check Solana Explorer for your reveal transaction."
+    );
+  })();
+
+  await Promise.race([arciumBranch, pollBranch]);
+
+  for (let i = 0; i < 5; i++) {
+    const v = await fetchAuctionAccount(program, auction);
+    if (v?.revealed) return;
+    await sleep(600 * (i + 1));
+  }
+
+  throw new Error(
+    "Reveal callback never flipped `auction.revealed`. Verify Arcium cluster offset env matches deployment and MXE / circuits are initialized."
   );
 }
 
@@ -606,10 +659,12 @@ export async function revealWinnerFlow(
     authority,
     auction
   );
-  await awaitRevealWinnerFinalized(
+  await awaitRevealWinnerFinalizedOrPoll(
     provider,
+    program,
+    auction,
     out.computationOffset,
-    program.programId
+    { timeoutMs: 10 * 60_000 }
   );
   return out;
 }

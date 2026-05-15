@@ -24,9 +24,9 @@ interface Props {
   winningBidLamports: string | null;
   /** Auth-only: trigger the on-chain reveal_winner Arcium computation. */
   onTriggerReveal?: () => void;
-  /** True while reveal is in progress (wallet tx and/or MXC wait). */
+  /** True while reveal is in progress (wallet tx and/or MXE wait). */
   triggering?: boolean;
-  /** Distinguishes submit vs MXC wait for button copy. */
+  /** Distinguishes submit vs MXE wait for button copy. */
   triggerPhase?: "submit" | "mxe";
   /** Whether MXE is ready (so the trigger button can enable). */
   mxeReady?: boolean;
@@ -165,7 +165,7 @@ export function RevealModal({
               >
                 <strong className="font-semibold text-amber-100">Misconfiguration:</strong> this build uses{" "}
                 <code className="rounded bg-black/40 px-1">NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET=0</code> against a hosted RPC —
-                MXC PDAs won&apos;t match <code className="font-mono">arcium deploy -o …</code>. Align env (e.g.{" "}
+                MXE PDAs won&apos;t match <code className="font-mono">arcium deploy -o …</code>. Align env (e.g.{" "}
                 <span className="font-mono">456</span>) and redeploy the site.
               </motion.p>
             ) : null}
@@ -269,7 +269,7 @@ export function RevealModal({
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
                     {triggerPhase === "mxe"
-                      ? "Waiting for MXC…"
+                      ? "Waiting for MXE…"
                       : "Submitting reveal…"}
                   </>
                 ) : (
