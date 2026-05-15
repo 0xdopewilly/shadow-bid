@@ -66,6 +66,36 @@ export function coerceAnchorU32(raw: unknown): number {
   return 0;
 }
 
+/**
+ * `bid_count` (u32 LE) at byte offset 41 of auction account **data** (after 8-byte discriminator):
+ * bump @8 + authority @9..40 + bid_count @41..44. Matches on-chain `Auction` layout.
+ */
+const AUCTION_ACCOUNT_DATA_BID_COUNT_OFFSET = 8 + 1 + 32;
+
+export function readAuctionBidCountFromAccountData(data: Uint8Array): number | null {
+  if (data.byteLength < AUCTION_ACCOUNT_DATA_BID_COUNT_OFFSET + 4) return null;
+  const base = data.byteOffset + AUCTION_ACCOUNT_DATA_BID_COUNT_OFFSET;
+  return new DataView(data.buffer, base, 4).getUint32(0, true);
+}
+
+/** JSON IDL fields are snake_case; decoded accounts may expose camelCase or snake_case. */
+function decodedAuctionBidCount(decoded: unknown): number {
+  const o = decoded as Record<string, unknown>;
+  return coerceAnchorU32(o.bidCount ?? o.bid_count);
+}
+
+function bnLikeToString(raw: unknown): string {
+  if (raw == null) return "0";
+  if (typeof raw === "object" && "toString" in (raw as object))
+    return String((raw as { toString(): string }).toString());
+  return String(raw);
+}
+
+function pickEncryptedStateChunks(decoded: unknown): unknown {
+  const o = decoded as Record<string, unknown>;
+  return o.encryptedState ?? o.encrypted_state;
+}
+
 export function getShadowBidProgram(
   provider: anchor.AnchorProvider
 ): ShadowBidProgram {
@@ -721,18 +751,21 @@ export async function fetchAllAuctions(
   program: ShadowBidProgram
 ): Promise<AuctionListEntry[]> {
   const accs = await program.account.auction.all();
-  return accs.map(({ publicKey, account }) => ({
-    pda: publicKey,
-    authority: account.authority,
-    bidCount: coerceAnchorU32(account.bidCount as unknown),
-    revealed: account.revealed,
-    winner: account.winner,
-    winningBid: account.winningBid.toString(),
-    biddingEndsAt: Number(account.biddingEndsAt.toString()),
-    title: account.title ?? "",
-    description: account.description ?? "",
-    imageUri: account.imageUri ?? "",
-  }));
+  return accs.map(({ publicKey, account }) => {
+    const a = account as Record<string, unknown>;
+    return {
+      pda: publicKey,
+      authority: account.authority,
+      bidCount: decodedAuctionBidCount(account),
+      revealed: account.revealed,
+      winner: account.winner,
+      winningBid: bnLikeToString(a.winningBid ?? a.winning_bid),
+      biddingEndsAt: Number(bnLikeToString(a.biddingEndsAt ?? a.bidding_ends_at)),
+      title: (a.title as string) ?? "",
+      description: (a.description as string) ?? "",
+      imageUri: ((a.imageUri ?? a.image_uri) as string) ?? "",
+    };
+  });
 }
 
 /**
@@ -784,23 +817,45 @@ export async function fetchAuctionAccount(
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       const acc = await program.account.auction.fetch(auction);
+      const a = acc as Record<string, unknown>;
+      const enc = pickEncryptedStateChunks(acc) as unknown as unknown[];
       const flat = new Uint8Array(96);
       for (let i = 0; i < 3; i++) {
-        const chunk = acc.encryptedState[i] as unknown as number[];
+        const chunk = enc[i] as unknown as number[];
         flat.set(Uint8Array.from(chunk), i * 32);
       }
+
+      let bidCount = decodedAuctionBidCount(acc);
+      try {
+        const info = await program.provider.connection.getAccountInfo(
+          auction,
+          program.provider instanceof anchor.AnchorProvider
+            ? program.provider.opts.commitment ?? "confirmed"
+            : "confirmed"
+        );
+        const rawBc =
+          info?.data instanceof Uint8Array
+            ? readAuctionBidCountFromAccountData(info.data)
+            : null;
+        if (rawBc != null) bidCount = rawBc >>> 0;
+      } catch {
+        /* keep decoded */
+      }
+
+      const sn = a.stateNonce ?? a.state_nonce;
+
       return {
-        bidCount: coerceAnchorU32(acc.bidCount as unknown),
-        stateNonce: acc.stateNonce.toString(),
+        bidCount,
+        stateNonce: bnLikeToString(sn),
         authority: acc.authority,
         encryptedStateBytes: flat,
         revealed: acc.revealed,
-        winningBid: acc.winningBid.toString(),
+        winningBid: bnLikeToString(a.winningBid ?? a.winning_bid),
         winner: acc.winner,
-        biddingEndsAt: Number(acc.biddingEndsAt.toString()),
-        title: acc.title ?? "",
-        description: acc.description ?? "",
-        imageUri: acc.imageUri ?? "",
+        biddingEndsAt: Number(bnLikeToString(a.biddingEndsAt ?? a.bidding_ends_at)),
+        title: (a.title as string) ?? "",
+        description: (a.description as string) ?? "",
+        imageUri: ((a.imageUri ?? a.image_uri) as string) ?? "",
       };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
