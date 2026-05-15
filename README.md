@@ -71,6 +71,7 @@ From the repo root:
 
 ```bash
 yarn install           # toolchain deps + scripts
+yarn check:config      # optional: Arcium.toml vs bundled IDL vs CI vs web/.env.local
 arcium build          # Rust program + Arcis artifacts
 arcium test           # Anchor-style integration suite
 ```
