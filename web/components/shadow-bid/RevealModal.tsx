@@ -32,6 +32,8 @@ interface Props {
   mxeReady?: boolean;
   /** True when NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET is 0 against a hosted RPC (almost always wrong vs deploy `-o`). */
   arciumClusterMisconfigured?: boolean;
+  /** From `NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET` — verify it matches `arcium deploy -o …` for this MXE. */
+  clusterOffset?: number;
 }
 
 function shortPk(b58: string): string {
@@ -60,6 +62,7 @@ export function RevealModal({
   triggerPhase,
   mxeReady = true,
   arciumClusterMisconfigured = false,
+  clusterOffset,
 }: Props) {
   useEffect(() => {
     if (!open) return;
@@ -85,6 +88,9 @@ export function RevealModal({
       })),
     [open]
   );
+
+  const localBidButChainZero =
+    !revealed && bidCount === 0 && myHighestLamports != null;
 
   return (
     <AnimatePresence>
@@ -248,9 +254,57 @@ export function RevealModal({
               </motion.div>
             </div>
 
+            {localBidButChainZero ? (
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.55 }}
+                className="mt-3 rounded-xl border border-amber-400/45 bg-amber-500/[0.12] px-3 py-3 text-[11px] leading-snug text-amber-50/95"
+              >
+                <p className="font-semibold text-amber-100">
+                  Confirmed bids are still 0 on-chain — your “Your highest sealed bid” is only on this device
+                </p>
+                <p className="mt-2">
+                  After you click Commit, we cache an amount in{" "}
+                  <strong className="text-amber-100">browser storage</strong>.{" "}
+                  <strong className="text-amber-100">Confirmed sealed bids</strong> is the program&apos;s{" "}
+                  <code className="rounded bg-black/45 px-1 font-mono text-amber-100/95">bid_count</code>{" "}
+                  from Solana — it increases only after MXE finalizes the encrypted{" "}
+                  <code className="rounded bg-black/45 px-1 font-mono text-amber-100/95">place_bid</code>{" "}
+                  computation. Same wallet tx landing ≠ finalized bid yet.
+                </p>
+                <p className="mt-2">
+                  If <code className="rounded bg-black/45 px-1 font-mono">bid_count</code> never moves, the usual fix is{" "}
+                  <strong className="text-amber-100">
+                    <code className="rounded bg-black/45 px-1">NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET</code>
+                  </strong>{" "}
+                  matching the exact <code className="rounded bg-black/45 px-1">-o</code> value from{" "}
+                  <strong className="text-amber-100">your</strong>{" "}
+                  <code className="rounded bg-black/45 px-1">arcium deploy</code> for this MXE —{" "}
+                  <strong className="text-amber-100">456 is just a common example</strong>, not automatically correct for every deploy.
+                </p>
+                {clusterOffset != null ? (
+                  <p className="mt-2 rounded-lg bg-black/35 px-2 py-1.5 font-mono text-[11px] text-amber-200/95">
+                    This site&apos;s env offset:{" "}
+                    <span className="text-white">{clusterOffset}</span>
+                  </p>
+                ) : null}
+              </motion.div>
+            ) : null}
+
             <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
               Count stays at <span className="font-mono text-slate-400">0</span> until the first bid&apos;s
               MXE computation finishes — not when the wallet-only transaction lands.
+              {clusterOffset != null ? (
+                <>
+                  {" "}
+                  <span className="block pt-1 text-slate-600">
+                    Cluster offset from env:{" "}
+                    <span className="font-mono text-slate-400">{clusterOffset}</span> — must equal{" "}
+                    <code className="rounded bg-black/40 px-1 font-mono text-slate-500">arcium deploy -o …</code>
+                  </span>
+                </>
+              ) : null}
             </p>
 
             {!revealed && isAuthority && onTriggerReveal ? (

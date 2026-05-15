@@ -586,6 +586,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
         triggering={revealUiPhase !== "idle"}
         triggerPhase={revealUiPhase === "idle" ? undefined : revealUiPhase}
         arciumClusterMisconfigured={arciumClusterMisconfigured}
+        clusterOffset={clusterOffset}
         onTriggerReveal={() => void onReveal().catch(reportError)}
       />
 
