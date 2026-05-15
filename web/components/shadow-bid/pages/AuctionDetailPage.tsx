@@ -2,7 +2,11 @@
 
 import { AppShell, NavCrumb } from "@/components/shadow-bid/AppShell";
 import { CiphertextRain } from "@/components/shadow-bid/CiphertextRain";
-import { EpochTimer } from "@/components/shadow-bid/EpochTimer";
+import {
+  EpochTimer,
+  formatCountdown,
+  useBiddingCountdown,
+} from "@/components/shadow-bid/EpochTimer";
 import { RevealModal } from "@/components/shadow-bid/RevealModal";
 import { useShadowBid } from "@/components/shadow-bid/ShadowBidContext";
 import { SafeRemoteImage } from "@/components/shadow-bid/SafeRemoteImage";
@@ -26,17 +30,17 @@ import * as anchor from "@coral-xyz/anchor";
 import { motion } from "framer-motion";
 import {
   Activity,
+  ArrowRight,
   Check,
   Coins,
   Copy,
   Crown,
   ExternalLink,
-  Hash,
   Loader2,
   Lock,
+  Play,
   Radio,
   Share2,
-  Shield,
   Trophy,
   User as UserIcon,
   Zap,
@@ -53,14 +57,21 @@ type Snapshot = {
   revealed: boolean;
   winningBidLamports: string;
   winnerB58: string;
-  /** On-chain deadline (unix seconds). 0 = unset. */
   biddingEndsAt: number;
-  /** Listing metadata (public on-chain). */
   title: string;
   description: string;
   imageUri: string;
   fetchedAt: number;
 };
+
+const DEAL_SIDEBAR_NAV = [
+  { href: "#deal-overview", label: "Overview" },
+  { href: "/about", label: "The mechanism" },
+  { href: "/auctions", label: "Marketplace" },
+  { href: "/dashboard", label: "Your bids" },
+] as const;
+
+const QUICK_SOL_AMTS = ["0.05", "0.25", "1"] as const;
 
 function truncateMid(s: string, a = 5, b = 4) {
   if (s.length <= a + b + 1) return s;
@@ -88,6 +99,62 @@ function solToLamports(sol: string): bigint {
   return BigInt(Math.round(n * 1e9));
 }
 
+function SegmentedBidBar({ filled, total }: { filled: number; total: number }) {
+  return (
+    <div className="flex gap-1">
+      {Array.from({ length: total }, (_, i) => (
+        <div
+          key={i}
+          className={`h-2.5 flex-1 rounded-sm transition-all duration-300 ${
+            i < filled
+              ? "bg-gradient-to-t from-violet-600 to-fuchsia-400 shadow-[0_0_12px_rgba(167,139,250,0.45)]"
+              : "bg-white/[0.06]"
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
+function DealDetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-white/[0.06] py-2.5 text-sm last:border-0">
+      <span className="text-slate-500">{label}</span>
+      <span className="max-w-[60%] text-right font-medium leading-snug text-slate-100">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+/** CRAFTS-style split bar: primary segment + remainder (decorative). */
+function DualSegmentAllocationBar({
+  primaryPct,
+  primaryLabel,
+  secondaryLabel,
+}: {
+  primaryPct: number;
+  primaryLabel: string;
+  secondaryLabel: string;
+}) {
+  const w = Math.min(92, Math.max(8, primaryPct));
+  return (
+    <div>
+      <div className="flex h-3.5 w-full overflow-hidden rounded-lg bg-white/[0.06] ring-1 ring-white/[0.06]">
+        <div
+          className="bg-gradient-to-r from-violet-500 to-fuchsia-500 shadow-[0_0_16px_rgba(167,139,250,0.35)] transition-all duration-500"
+          style={{ width: `${w}%` }}
+        />
+        <div className="min-w-0 flex-1 bg-white/[0.04]" />
+      </div>
+      <div className="mt-2 flex justify-between gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+        <span className="text-violet-200/90">{primaryLabel}</span>
+        <span className="text-right text-slate-400">{secondaryLabel}</span>
+      </div>
+    </div>
+  );
+}
+
 export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
   const {
     program,
@@ -107,6 +174,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
     copyFlash,
     refreshAllAuctions,
     openWalletModal,
+    solBalance,
   } = useShadowBid();
 
   const auctionKey = useMemo(() => {
@@ -122,8 +190,28 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [revealOpen, setRevealOpen] = useState(false);
   const [revealing, setRevealing] = useState(false);
-  const [epochEnded, setEpochEnded] = useState(false);
   const lastSeenBidCount = useRef<number | null>(null);
+
+  const biddingDeadlineSec =
+    auctionKey != null ? snapshot?.biddingEndsAt ?? null : null;
+  const countdown = useBiddingCountdown(biddingDeadlineSec);
+
+  const countdownOverride = useMemo(
+    () => ({
+      remainingMs: countdown.remainingMs,
+      endMs: countdown.endMs,
+      ended: countdown.ended,
+      running: countdown.running,
+      locked: countdown.locked,
+    }),
+    [
+      countdown.remainingMs,
+      countdown.endMs,
+      countdown.ended,
+      countdown.running,
+      countdown.locked,
+    ]
+  );
 
   const refresh = useCallback(async () => {
     if (!program || !auctionKey || rpcReachable === false) {
@@ -155,7 +243,6 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
     return () => clearInterval(t);
   }, [refresh]);
 
-  // Outbid toast on bid count delta when the user has a stored bid
   useEffect(() => {
     if (!snapshot) {
       lastSeenBidCount.current = null;
@@ -176,7 +263,6 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
     lastSeenBidCount.current = next;
   }, [snapshot, walletPk, auctionPda, pushToast]);
 
-  // Event listeners
   useEffect(() => {
     if (!program || !auctionKey || rpcReachable !== true) return;
     const subs: number[] = [];
@@ -238,24 +324,11 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
     rpcReachable,
   ]);
 
-  useEffect(() => {
-    const end = snapshot?.biddingEndsAt;
-    if (!end || end <= 0) {
-      setEpochEnded(false);
-      return;
-    }
-    const tick = () => setEpochEnded(end * 1000 - Date.now() <= 0);
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [snapshot?.biddingEndsAt]);
-
   const isAuthority = useMemo(() => {
     if (!publicKey || !snapshot) return false;
     return publicKey.equals(snapshot.authority);
   }, [publicKey, snapshot]);
 
-  /** MXC PDAs derive from offset; mismatch with deploy makes bid_count frozen at 0 */
   const arciumClusterMisconfigured = useMemo(
     () => clusterOffset === 0 && !isLocalSolanaRpc(rpcEndpoint),
     [clusterOffset, rpcEndpoint]
@@ -433,6 +506,31 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
   }
 
   const listingHeroSrc = snapshot ? listingImageSrc(snapshot.imageUri) : null;
+  const bidCount = snapshot?.bidCount ?? 0;
+  const progressSegments = 28;
+  const progressFilled = Math.min(bidCount, progressSegments);
+  const softMomentumDen = Math.max(12, bidCount + 4);
+  const momentumPct = Math.min(100, Math.round((bidCount / softMomentumDen) * 100));
+
+  const bidSliderValue = useMemo(() => {
+    const n = parseFloat(bidInput.replace(",", "."));
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return Math.min(25, n);
+  }, [bidInput]);
+
+  const listingTitle = snapshot?.title?.trim()
+    ? snapshot.title.trim()
+    : truncateMid(auctionPda, 8, 8);
+
+  const listingLive =
+    !!snapshot &&
+    !snapshot.revealed &&
+    (!countdown.locked || countdown.running);
+
+  const balSolDisplay =
+    solBalance != null
+      ? solBalance.toLocaleString(undefined, { maximumFractionDigits: 4 })
+      : "—";
 
   return (
     <AppShell>
@@ -452,404 +550,736 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
         onTriggerReveal={() => void onReveal().catch(reportError)}
       />
 
-      <div className="mx-auto w-full max-w-[1400px] px-4 pt-8 sm:px-6 lg:px-8">
-        <NavCrumb href="/auctions" label="back to auctions" />
-        <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">
-              {snapshot?.revealed ? (
-                <>
-                  <Trophy className="h-3.5 w-3.5 text-amber-300" />
-                  revealed auction
-                </>
-              ) : (
-                <>
-                  <Lock className="h-3.5 w-3.5 text-violet-300" />
-                  sealed auction
-                </>
-              )}
-              {isAuthority ? (
-                <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] text-emerald-200">
-                  you are authority
-                </span>
-              ) : null}
-            </div>
-            <h1 className="mt-1 text-balance text-2xl font-bold text-white sm:text-3xl">
-              {snapshot?.title?.trim()
-                ? snapshot.title.trim()
-                : truncateMid(auctionPda, 8, 8)}
-            </h1>
-            {snapshot?.title?.trim() ? (
-              <p className="mt-1 font-mono text-xs text-slate-500">{truncateMid(auctionPda, 10, 10)}</p>
-            ) : null}
-            {snapshot?.description?.trim() ? (
-              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-400">
-                {snapshot.description.trim()}
+      <div className="relative pb-20 pt-3 text-slate-100">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-500/40 to-transparent" />
+        <div className="mx-auto max-w-[1440px] px-3 sm:px-5 lg:px-8">
+          {listingLive ? (
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-[11px] text-slate-500">
+                Deal room · same rhythm as Arcium reference layouts (nav · story · commit rail).
               </p>
-            ) : null}
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
-              <button
-                type="button"
-                onClick={() => void copyToClipboard("auction PDA", auctionPda)}
-                className="inline-flex items-center gap-1 rounded border border-white/10 px-1.5 py-0.5 hover:text-white"
-              >
-                {copyFlash === "auction PDA" ? (
-                  <Check className="h-3 w-3 text-emerald-400" />
-                ) : (
-                  <Copy className="h-3 w-3" />
-                )}
-                copy address
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const url = `${window.location.origin}/auctions/${auctionPda}`;
-                  void copyToClipboard("listing link", url);
-                }}
-                className="inline-flex items-center gap-1 rounded border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 text-violet-200/90 hover:bg-violet-500/20 hover:text-white"
-              >
-                {copyFlash === "listing link" ? (
-                  <Check className="h-3 w-3 text-emerald-400" />
-                ) : (
-                  <Share2 className="h-3 w-3" />
-                )}
-                copy invite link
-              </button>
-              {snapshot ? (
-                <>
-                  <span className="inline-flex items-center gap-1">
-                    <UserIcon className="h-3 w-3" />
-                    by <code className="text-slate-400">{truncateMid(snapshot.authority.toBase58(), 4, 4)}</code>
-                  </span>
-                  <span>· last synced {timeAgo(snapshot.fetchedAt)}</span>
-                </>
-              ) : null}
+              <span className="inline-flex w-fit items-center rounded-full border border-fuchsia-400/35 bg-fuchsia-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-fuchsia-100 shadow-[0_0_24px_rgba(232,121,249,0.18)]">
+                Featured · live pool
+              </span>
             </div>
-            <p className="mt-2 max-w-2xl text-[11px] leading-relaxed text-slate-500">
-              Bidders use their own wallets on the same cluster as this app. Share the invite link (or browse{" "}
-              <Link href="/auctions" className="text-violet-400/90 hover:text-violet-300">
-                Auctions
-              </Link>
-              ); bid amounts stay sealed until the authority reveals.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
+          ) : null}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] pb-4">
+            <Link
+              href="/auctions"
+              className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-slate-500 transition-colors hover:text-violet-300"
+            >
+              <ArrowRight className="h-3 w-3 rotate-180" />
+              Back to auctions
+            </Link>
             <button
               type="button"
               disabled={!snapshot}
               onClick={() => setRevealOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-fuchsia-400/35 bg-fuchsia-500/10 px-3 py-1.5 text-xs font-semibold text-fuchsia-100 hover:bg-fuchsia-500/20 disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-full border border-fuchsia-400/35 bg-fuchsia-500/15 px-4 py-2 text-xs font-semibold text-fuchsia-100 shadow-[0_0_24px_rgba(192,38,211,0.2)] backdrop-blur-sm transition-colors hover:bg-fuchsia-500/25 disabled:opacity-40"
             >
-              <Trophy className="h-3.5 w-3.5" />
+              <Trophy className="h-3.5 w-3.5 text-fuchsia-300" />
               {snapshot?.revealed
                 ? "View winner"
-                : epochEnded && isAuthority
+                : countdown.locked && countdown.ended && isAuthority
                   ? "Reveal winner"
                   : "Reveal summary"}
             </button>
           </div>
-        </div>
-      </div>
 
-      {listingHeroSrc ? (
-        <div className="mx-auto mt-6 w-full max-w-[1400px] px-4 sm:px-6 lg:px-8">
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-[0_0_40px_rgba(99,102,241,0.12)]">
-            <SafeRemoteImage
-              src={listingHeroSrc}
-              alt={snapshot?.title?.trim() ? snapshot.title.trim() : "Listing"}
-              className="max-h-[min(420px,52vh)] w-full object-cover"
-            />
-          </div>
-        </div>
-      ) : null}
-
-      {/* Main grid */}
-      <div className="mx-auto mt-8 grid w-full max-w-[1400px] gap-6 px-4 pb-12 sm:px-6 lg:grid-cols-[1.4fr_1fr] lg:gap-8 lg:px-8">
-        {/* LEFT: Terminal */}
-        <div className="flex flex-col gap-6">
-          <div className="relative scanline rounded-2xl border border-violet-400/25 bg-black/45 p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.22em] text-violet-300/85">
-                <Radio className="h-3 w-3 animate-pulse" />
-                encrypted_state[0..28]
-              </span>
-              <span className="rounded-md border border-fuchsia-400/35 bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-fuchsia-200">
-                {snapshot?.revealed ? "revealed" : "sealed · MXE only"}
-              </span>
-            </div>
-            <CiphertextRain
-              cols={28}
-              rows={8}
-              realBytes={snapshot?.encryptedStateBytes ?? null}
-              paused={revealOpen}
-            />
-            <p className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-              <Coins className="h-3 w-3 opacity-60" />
-              No one sees the{" "}
-              <strong className="font-medium text-violet-200/95">global high bid</strong> until the
-              seller reveals — only the running{" "}
-              <span className="font-mono text-slate-400">bid_count</span>. Sealed row:
-              {snapshot ? (
-                <>
-                  <span>·</span>
-                  <span className="text-violet-300/90">
-                    MXE-confirmed sealed bids: {snapshot.bidCount}
-                  </span>
-                </>
-              ) : null}
-            </p>
-          </div>
-
-          {snapshot?.revealed ? (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="rounded-2xl border border-amber-400/40 bg-gradient-to-br from-amber-500/15 via-fuchsia-500/10 to-violet-600/15 p-5 shadow-[0_0_36px_rgba(251,191,36,0.25)]"
-            >
-              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.22em] text-amber-200">
-                <Crown className="h-3 w-3" />
-                Winner
-              </div>
-              <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
-                <code className="font-mono text-base text-white sm:text-lg">
-                  {truncateMid(snapshot.winnerB58, 6, 6)}
-                </code>
-                <span className="font-mono text-2xl text-fuchsia-100">
-                  {lamportsToSolDisplayWithSuffix(snapshot.winningBidLamports)}
-                </span>
-              </div>
-              <p className="mt-2 text-[11px] text-amber-200/70">
-                Decrypted by the Arcium MXE cluster via{" "}
-                <code className="rounded bg-black/40 px-1 text-amber-100">reveal_winner</code>.
-                Losing amounts remain sealed forever.
-              </p>
-              {snapshot.bidCount === 0 ? (
-                <p className="mt-2 text-[11px] text-amber-300/85">
-                  MXE-confirmed bid count is still zero — an enormous SOL figure means this reveal was
-                  persisted incorrectly on-chain. Ignore it for settlement; create a new listing after upgrading.
-                </p>
-              ) : null}
-            </motion.div>
-          ) : null}
-
-          <EpochTimer
-            biddingEndsAtUnixSec={snapshot?.biddingEndsAt ?? null}
-            canSet={isAuthority}
-            canCallChain={!!program && rpcReachable === true}
-            onEnded={() => setEpochEnded(true)}
-            onSetDeadline={(s) => onSetDeadline(s).catch((e) => { reportError(e); throw e; })}
-          />
-
-          <div className="rounded-2xl border border-white/[0.08] bg-[linear-gradient(160deg,rgba(15,8,40,0.55)_0%,rgba(35,10,60,0.45)_100%)] p-5 backdrop-blur-md">
-            <div className="mb-4 flex items-center gap-2">
-              <Shield className="h-4 w-4 text-violet-300" />
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-violet-200/85">
-                Place your sealed bid
-              </h2>
-            </div>
-
-            {arciumClusterMisconfigured ? (
-              <div className="mb-4 rounded-xl border border-amber-400/35 bg-amber-500/10 px-3 py-2 text-[11px] leading-snug text-amber-100/95">
-                <strong className="font-semibold">Config:</strong>{" "}
-                <code className="rounded bg-black/35 px-1">NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET</code> is{" "}
-                <code className="font-mono text-amber-200">0</code> but Arcium Devnet deployments use{" "}
-                <code className="font-mono text-amber-200">arcium deploy -o …</code> (e.g.{" "}
-                <span className="font-mono">456</span>). Set it to match, rebuild — otherwise bids/reveal silently fail to update{" "}
-                <code className="font-mono text-amber-200/90">bid_count</code>.
-              </div>
-            ) : null}
-
-            {!connected ? (
-              <button
-                type="button"
-                onClick={openWalletModal}
-                className="w-full rounded-xl border border-violet-400/40 bg-gradient-to-r from-violet-600 via-fuchsia-600 to-indigo-600 py-3 text-sm font-semibold text-white shadow-[0_0_28px_rgba(192,38,211,0.35)]"
-              >
-                Connect wallet to bid
-              </button>
-            ) : (
-              <>
-                <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-slate-400">
-                  Your sealed amount (SOL)
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  value={bidInput}
-                  onChange={(e) => setBidInput(e.target.value)}
-                  disabled={!!snapshot?.revealed}
-                  className="mb-4 w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 font-mono text-lg text-white outline-none transition-all duration-300 placeholder:text-slate-600 input-glow disabled:opacity-50"
-                />
-
-                <motion.button
-                  type="button"
-                  onClick={() => void onSubmitBid().catch(reportError)}
-                  disabled={
-                    !!busy ||
-                    rpcReachable === false ||
-                    !bidInput.trim() ||
-                    !mxePub ||
-                    !!snapshot?.revealed
-                  }
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.99 }}
-                  className="relative w-full overflow-hidden rounded-2xl border border-violet-400/30 bg-gradient-to-r from-violet-600 via-fuchsia-600 to-indigo-600 py-3.5 text-base font-bold tracking-wide text-white shadow-neon-strong disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <span className="relative z-10 flex items-center justify-center gap-2">
-                    {busy?.includes("Encrypting") ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <Zap className="h-5 w-5" />
-                    )}
-                    {snapshot?.revealed
-                      ? "Auction revealed — bidding closed"
-                      : busy || "Submit Secret Bid"}
-                  </span>
-                </motion.button>
-
-                {!mxePub && rpcReachable === true ? (
-                  <p className="mt-2 text-[11px] text-amber-300/80">
-                    MXE pubkey loading… make sure circuits are initialized.
+          <div className="mt-6 flex flex-col gap-8 xl:grid xl:grid-cols-[220px_minmax(0,1fr)_400px] xl:items-start">
+            {/* Left rail */}
+            <aside className="hidden xl:block">
+              <div className="sticky top-24 space-y-8">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-600 font-bold text-white shadow-lg shadow-violet-500/35">
+                    S
+                  </div>
+                  <div className="leading-tight">
+                    <div className="text-sm font-bold tracking-tight text-white">Shadow Bid</div>
+                    <div className="text-[10px] font-medium uppercase tracking-widest text-slate-500">
+                      Sealed auctions
+                    </div>
+                  </div>
+                </div>
+                <nav className="space-y-0.5 border-l border-white/10">
+                  {DEAL_SIDEBAR_NAV.map(({ href, label }) => {
+                    const isHash = href.startsWith("#");
+                    return (
+                      <Link
+                        key={href}
+                        href={href}
+                        className={`block py-2 pl-4 text-sm font-medium transition-colors ${
+                          isHash
+                            ? "border-l-2 border-violet-400 text-violet-200"
+                            : "border-l-2 border-transparent text-slate-400 hover:text-violet-200"
+                        }`}
+                      >
+                        {label}
+                      </Link>
+                    );
+                  })}
+                </nav>
+                {snapshot ? (
+                  <div>
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                      Listing authority
+                    </p>
+                    <div className="glass-panel flex items-center gap-3 rounded-xl border-glow p-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 text-xs font-bold text-white shadow-neon">
+                        {snapshot.authority.toBase58().slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate font-mono text-xs text-slate-200">
+                          {truncateMid(snapshot.authority.toBase58(), 6, 6)}
+                        </p>
+                        <p className="text-[10px] text-slate-500">Seller key</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+                <div className="rounded-xl border border-white/[0.06] bg-black/25 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                    Stack
                   </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <span className="rounded-md border border-violet-500/25 bg-violet-500/15 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-violet-200">
+                      Solana
+                    </span>
+                    <span className="rounded-md border border-fuchsia-500/25 bg-fuchsia-500/15 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-fuchsia-200">
+                      Arcium MPC
+                    </span>
+                  </div>
+                  <a
+                    href="https://arcium.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 inline-flex items-center gap-1 text-[11px] font-semibold text-violet-300 hover:text-fuchsia-300"
+                  >
+                    Arcium overview <ArrowRight className="h-3 w-3" />
+                  </a>
+                </div>
+              </div>
+            </aside>
+
+            {/* Mobile nav */}
+            <div className="-mx-1 flex gap-2 overflow-x-auto pb-1 xl:hidden">
+              {DEAL_SIDEBAR_NAV.map(({ href, label }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-slate-300 backdrop-blur-sm hover:border-violet-400/35 hover:text-violet-200"
+                >
+                  {label}
+                </Link>
+              ))}
+            </div>
+
+            {/* Center column */}
+            <main className="min-w-0 space-y-6">
+              <section
+                id="deal-overview"
+                className="overflow-hidden rounded-2xl border border-violet-500/25 bg-black/40 shadow-glass-lg shadow-[0_0_60px_rgba(99,102,241,0.12)]"
+              >
+                <div className="relative min-h-[280px]">
+                  {listingHeroSrc ? (
+                    <>
+                      <SafeRemoteImage
+                        src={listingHeroSrc}
+                        alt={listingTitle}
+                        className="absolute inset-0 h-full w-full object-cover opacity-90"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/75 to-black/35" />
+                    </>
+                  ) : (
+                    <div className="absolute inset-0 bg-gradient-to-br from-violet-950/90 via-[#1a0a2e] to-black" />
+                  )}
+                  <div className="relative flex min-h-[300px] flex-col p-6 sm:min-h-[320px] sm:p-8">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-white shadow-neon">
+                        Sealed auction
+                      </span>
+                      {listingLive ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/60 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-emerald-100">
+                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+                          Live
+                        </span>
+                      ) : snapshot?.revealed ? (
+                        <span className="rounded-full border border-amber-400/50 bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-amber-100">
+                          Settled
+                        </span>
+                      ) : (
+                        <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-white/90">
+                          Open
+                        </span>
+                      )}
+                      {isAuthority ? (
+                        <span className="rounded-full border border-white/25 bg-white/10 px-2 py-0.5 text-[9px] font-semibold text-emerald-100">
+                          You are authority
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.35em] text-violet-200/65">
+                      Shadow Bid · Solana
+                    </p>
+                    <h1 className="mt-2 max-w-3xl text-balance text-3xl font-bold tracking-tight text-white sm:text-4xl">
+                      {listingTitle}
+                    </h1>
+                    <p className="mt-2 max-w-xl text-[11px] font-semibold uppercase tracking-[0.28em] text-white/40">
+                      Encrypted bids · on-chain settlement
+                    </p>
+                    <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/85">
+                      {snapshot?.description?.trim()
+                        ? snapshot.description.trim()
+                        : "Real-time sealed bids on Solana. Amounts stay encrypted until the authority runs reveal through Arcium MXC."}
+                    </p>
+                    <div className="mt-6 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          document.getElementById("deal-commit")?.scrollIntoView({
+                            behavior: "smooth",
+                          })
+                        }
+                        className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-black/40 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur-md hover:bg-black/55"
+                      >
+                        <Play className="h-4 w-4 fill-current" />
+                        Place a sealed bid
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = `${window.location.origin}/auctions/${auctionPda}`;
+                          void copyToClipboard("listing link", url);
+                        }}
+                        className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/15"
+                      >
+                        {copyFlash === "listing link" ? (
+                          <Check className="h-4 w-4 text-emerald-300" />
+                        ) : (
+                          <Share2 className="h-4 w-4" />
+                        )}
+                        Copy invite link
+                      </button>
+                    </div>
+
+                    <div className="mt-auto pt-10">
+                      <div className="-mx-6 grid grid-cols-1 divide-y divide-white/10 border-t border-white/15 bg-black/70 backdrop-blur-md sm:-mx-8 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                      {[
+                        {
+                          k: "Sealed bids",
+                          v: snapshot ? String(snapshot.bidCount) : "…",
+                        },
+                        { k: "Currency", v: "SOL" },
+                        {
+                          k: "Reveal",
+                          v: snapshot?.revealed
+                            ? "On-chain"
+                            : countdown.locked && countdown.ended
+                              ? "Ready"
+                              : "Pending",
+                        },
+                      ].map((cell) => (
+                        <div key={cell.k} className="px-5 py-4 sm:py-5">
+                          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/45">
+                            {cell.k}
+                          </p>
+                          <p className="mt-1.5 text-xl font-bold tracking-tight text-white sm:text-2xl">
+                            {cell.v}
+                          </p>
+                        </div>
+                      ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="glass-panel rounded-2xl border-glow p-5 sm:p-6">
+                <div className="flex flex-wrap items-end justify-between gap-4">
+                  <div>
+                    <p className="text-2xl font-bold tracking-tight text-transparent bg-gradient-to-r from-violet-200 via-fuchsia-200 to-white bg-clip-text md:text-3xl">
+                      {bidCount} sealed {bidCount === 1 ? "bid" : "bids"}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {momentumPct}% momentum index (demo pacing toward activity)
+                    </p>
+                  </div>
+                  <div className="text-right text-sm text-slate-500">
+                    <span className="font-mono font-semibold text-violet-200">0</span>
+                    <span className="mx-1 text-slate-600">→</span>
+                    <span className="text-slate-500">open participation</span>
+                  </div>
+                </div>
+                <div className="mt-5">
+                  <SegmentedBidBar filled={progressFilled} total={progressSegments} />
+                </div>
+                <div className="mt-3 flex justify-between gap-2 text-[11px] text-slate-500">
+                  <span className="font-mono text-slate-600">0</span>
+                  <span className="text-right">
+                    <span className="font-semibold text-fuchsia-300/90">{momentumPct}%</span>
+                    <span className="text-slate-600"> · pulse target </span>
+                    <span className="font-mono text-slate-400">{softMomentumDen}</span>
+                    <span className="text-slate-600"> bids (UI only)</span>
+                  </span>
+                </div>
+                <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-4">
+                  <p className="text-sm font-medium text-slate-300">
+                    {bidCount} bidder{bidCount === 1 ? "" : "s"} finalized on-chain
+                  </p>
+                  <div className="flex -space-x-2">
+                    {Array.from({ length: Math.min(8, Math.max(3, bidCount + 2)) }, (_, i) => (
+                      <div
+                        key={i}
+                        className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-[#0b0420] text-[10px] font-bold text-white shadow-md"
+                        style={{
+                          background: `linear-gradient(135deg, hsl(${265 + i * 14}, 70%, 58%), hsl(${310 + i * 10}, 65%, 48%))`,
+                        }}
+                      >
+                        {String.fromCharCode(65 + (i % 26))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              <section className="glass-panel rounded-2xl border border-violet-500/20 p-5 sm:p-6 shadow-[0_0_40px_rgba(139,92,246,0.08)]">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] pb-4">
+                  <div className="flex items-baseline gap-3">
+                    <span className="text-lg font-black tracking-[0.28em] text-white sm:text-xl">
+                      ARCIUM
+                    </span>
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                      Sealed compute
+                    </span>
+                  </div>
+                  <a
+                    href="https://arcium.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-sm font-semibold text-violet-300 hover:text-fuchsia-300"
+                  >
+                    Learn more <ArrowRight className="h-4 w-4" />
+                  </a>
+                </div>
+                <div className="flex flex-wrap items-end justify-between gap-3 pt-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-white">Sealed bid auction</h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Powered by Arcium MPC on Solana.
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4 rounded-xl border border-violet-500/25 bg-violet-500/[0.07] px-4 py-3 text-sm leading-relaxed text-slate-200">
+                  <strong className="text-violet-200">Privacy rail.</strong> Bid amounts are never
+                  public on-chain before reveal: other bidders, the seller, and observers only see
+                  ciphertext and the MXE-finalized{" "}
+                  <code className="rounded bg-black/40 px-1 font-mono text-xs text-fuchsia-200">
+                    bid_count
+                  </code>
+                  .
+                </div>
+              </section>
+
+              <div className="relative overflow-hidden rounded-2xl border border-violet-500/20 bg-black/45 p-4 shadow-inner backdrop-blur-sm">
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.22em] text-violet-300/85">
+                    <Radio className="h-3 w-3 animate-pulse" />
+                    encrypted_state
+                  </span>
+                  <span className="rounded-md border border-fuchsia-400/35 bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-fuchsia-200">
+                    {snapshot?.revealed ? "revealed" : "sealed · MXE"}
+                  </span>
+                </div>
+                <CiphertextRain
+                  cols={28}
+                  rows={8}
+                  realBytes={snapshot?.encryptedStateBytes ?? null}
+                  paused={revealOpen}
+                />
+                <p className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                  <Coins className="h-3 w-3 opacity-60" />
+                  High bids stay hidden until{" "}
+                  <code className="rounded bg-black/50 px-1 font-mono text-slate-300">
+                    reveal_winner
+                  </code>
+                  . Confirmed sealed bids:{" "}
+                  <span className="font-semibold text-fuchsia-300">{bidCount}</span>
+                </p>
+              </div>
+
+              {snapshot?.revealed ? (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-2xl border border-amber-400/40 bg-gradient-to-br from-amber-500/15 via-fuchsia-500/10 to-violet-600/15 p-5 shadow-[0_0_36px_rgba(251,191,36,0.25)]"
+                >
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.22em] text-amber-200">
+                    <Crown className="h-3 w-3" />
+                    Winner
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
+                    <code className="font-mono text-base text-white sm:text-lg">
+                      {truncateMid(snapshot.winnerB58, 6, 6)}
+                    </code>
+                    <span className="font-mono text-2xl text-fuchsia-100">
+                      {lamportsToSolDisplayWithSuffix(snapshot.winningBidLamports)}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[11px] text-amber-200/70">
+                    Decrypted by Arcium MXE via{" "}
+                    <code className="rounded bg-black/40 px-1 font-mono text-amber-100">
+                      reveal_winner
+                    </code>
+                    .
+                  </p>
+                  {snapshot.bidCount === 0 ? (
+                    <p className="mt-2 text-[11px] text-amber-300/85">
+                      MXE bid count is zero while SOL looks huge—ignore for settlement; redeploy
+                      listing after fix.
+                    </p>
+                  ) : null}
+                </motion.div>
+              ) : null}
+
+              <EpochTimer
+                biddingEndsAtUnixSec={snapshot?.biddingEndsAt ?? null}
+                canSet={isAuthority}
+                canCallChain={!!program && rpcReachable === true}
+                countdownOverride={countdownOverride}
+                onSetDeadline={(s) =>
+                  onSetDeadline(s).catch((e) => {
+                    reportError(e);
+                    throw e;
+                  })
+                }
+              />
+
+              <section className="glass-panel rounded-2xl p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-violet-400" />
+                  <h3 className="font-semibold text-white">Activity</h3>
+                  <span className="text-[10px] uppercase tracking-widest text-slate-500">
+                    this session
+                  </span>
+                </div>
+                <ul className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
+                  {feed.length === 0 ? (
+                    <li className="px-1 py-4 text-xs text-slate-500">
+                      Actions from this browser session appear here. Use the activity drawer in the
+                      nav for more.
+                    </li>
+                  ) : (
+                    feed.slice(0, 14).map((row) => {
+                      const sigMatch = /tx ([1-9A-HJ-NP-Za-km-z]+)/.exec(row.msg);
+                      return (
+                        <li
+                          key={row.id}
+                          className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-3 text-sm text-slate-100"
+                        >
+                          <p className="leading-snug">{row.msg}</p>
+                          <p
+                            className="mt-1.5 flex items-center gap-2 text-[11px] text-slate-500"
+                            suppressHydrationWarning
+                          >
+                            <span>{timeAgo(row.ts)}</span>
+                            {sigMatch ? (
+                              <a
+                                href={explorerTxUrl(rpcEndpoint, sigMatch[1])}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-violet-300/90 hover:text-violet-200"
+                              >
+                                explorer <ExternalLink className="h-3 w-3" />
+                              </a>
+                            ) : null}
+                          </p>
+                        </li>
+                      );
+                    })
+                  )}
+                </ul>
+              </section>
+            </main>
+
+            {/* Right column */}
+            <aside id="deal-commit" className="min-w-0 space-y-6 xl:sticky xl:top-24">
+              <div className="glass-panel relative overflow-hidden rounded-2xl border-glow p-5 shadow-glass-lg">
+                <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-fuchsia-600/20 blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-12 -left-12 h-36 w-36 rounded-full bg-violet-600/20 blur-3xl" />
+                <div className="relative">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <h2 className="text-lg font-bold text-white">Commit sealed bid</h2>
+                    <p className="mt-1 max-w-[14rem] text-xs leading-relaxed text-slate-500">
+                      Same rail as reference deal pages: amount, presets, slider, primary commit.
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-center rounded-xl border border-fuchsia-500/35 bg-black/50 px-4 py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_0_28px_rgba(192,38,211,0.12)]">
+                    <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-slate-500">
+                      Closes in
+                    </span>
+                    <span
+                      className={`mt-1 font-mono text-xl font-bold tracking-tight sm:text-2xl ${
+                        countdown.running
+                          ? "text-glow-subtle text-fuchsia-200"
+                          : "text-slate-500"
+                      }`}
+                      suppressHydrationWarning
+                    >
+                      {countdown.locked
+                        ? formatCountdown(countdown.remainingMs)
+                        : "—"}
+                    </span>
+                  </div>
+                </div>
+                <p className="mt-3 text-xs text-slate-500">
+                  Uses your on-chain deadline when the authority has locked one.
+                </p>
+
+                {arciumClusterMisconfigured ? (
+                  <div className="mt-4 rounded-xl border border-amber-400/35 bg-amber-500/10 px-3 py-2 text-[11px] leading-snug text-amber-100/95">
+                    Set{" "}
+                    <code className="rounded bg-black/35 px-1">
+                      NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET
+                    </code>{" "}
+                    to match <code className="font-mono">arcium deploy -o …</code> or bids stall.
+                  </div>
                 ) : null}
 
-                {isAuthority && !snapshot?.revealed ? (
+                {!connected ? (
                   <button
                     type="button"
-                    disabled={revealing || !mxePub}
-                    onClick={() => void onReveal().catch(reportError)}
-                    className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-amber-400/40 bg-gradient-to-r from-amber-500/20 via-fuchsia-500/20 to-violet-500/20 py-2.5 text-sm font-semibold text-amber-100 shadow-[0_0_24px_rgba(251,191,36,0.25)] disabled:opacity-50"
+                    onClick={openWalletModal}
+                    className="mt-6 w-full rounded-xl border border-violet-400/40 bg-gradient-to-r from-violet-600 via-fuchsia-600 to-indigo-600 py-3.5 text-sm font-bold text-white shadow-[0_0_28px_rgba(192,38,211,0.35)] hover:brightness-110"
                   >
-                    {revealing ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Crown className="h-4 w-4" />
-                    )}
-                    {revealing ? "Decrypting on-chain…" : "Trigger on-chain reveal_winner"}
+                    Connect wallet
                   </button>
-                ) : null}
-              </>
-            )}
-          </div>
-        </div>
+                ) : (
+                  <>
+                    <div className="mt-6 flex items-center justify-between text-xs text-slate-500">
+                      <span>Wallet balance</span>
+                      <span className="font-mono font-semibold text-violet-200">
+                        {balSolDisplay} SOL
+                      </span>
+                    </div>
+                    <label className="mt-4 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      Commit amount
+                      <span className="mt-0.5 block text-[10px] font-normal normal-case tracking-normal text-slate-500">
+                        Sealed in SOL · ciphertext on-chain
+                      </span>
+                    </label>
+                    <div className="mt-2 flex rounded-xl border border-white/10 bg-black/35 focus-within:border-violet-400/50 focus-within:shadow-[0_0_20px_rgba(139,92,246,0.2)]">
+                      <span className="flex items-center border-r border-white/10 px-3 text-xs font-bold text-violet-300">
+                        ◎
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        value={bidInput}
+                        onChange={(e) => setBidInput(e.target.value)}
+                        disabled={!!snapshot?.revealed}
+                        className="input-glow w-full rounded-r-xl bg-transparent px-3 py-3 font-mono text-lg text-white outline-none placeholder:text-slate-600 disabled:opacity-50"
+                      />
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {QUICK_SOL_AMTS.map((amt) => (
+                        <button
+                          key={amt}
+                          type="button"
+                          disabled={!!snapshot?.revealed}
+                          onClick={() => setBidInput(amt)}
+                          className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-violet-400/35 hover:text-white disabled:opacity-40"
+                        >
+                          {amt} SOL
+                        </button>
+                      ))}
+                    </div>
 
-        {/* RIGHT: Stats + Activity */}
-        <div className="flex flex-col gap-6">
-          <div className="grid grid-cols-2 gap-3">
-            <SnapshotStat
-              label="Confirmed sealed bids"
-              value={snapshot ? `${snapshot.bidCount}` : "—"}
-            />
-            <SnapshotStat
-              label="State nonce"
-              mono
-              value={
-                snapshot ? truncateMid(snapshot.stateNonce, 4, 4) : "—"
-              }
-              icon={Hash}
-            />
-            <SnapshotStat
-              label="Your highest"
-              mono
-              value={
-                myHighest != null
-                  ? lamportsToSolDisplayWithSuffix(myHighest)
-                  : "—"
-              }
-            />
-            <SnapshotStat
-              label="MXE"
-              value={
-                rpcReachable === false
-                  ? "RPC offline"
-                  : mxePub
-                    ? "ready"
-                    : "pending"
-              }
-              tone={
-                mxePub
-                  ? "ok"
-                  : rpcReachable === false
-                    ? "warn"
-                    : "neutral"
-              }
-            />
-          </div>
-          <p className="text-[10px] leading-snug text-slate-500">
-            This counter tracks finalized bids only — your wallet tx confirms first; the Arcium
-            callback increments <span className="font-mono text-slate-400">bid_count</span> a few
-            seconds later (refresh happens automatically).
-          </p>
+                    <div className="mt-5">
+                      <div className="flex items-center justify-between text-xs text-slate-500">
+                        <span>Bid size (0–25 SOL)</span>
+                        <span className="font-mono text-violet-200">
+                          {bidSliderValue.toFixed(2)} SOL
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={25}
+                        step={0.05}
+                        value={bidSliderValue}
+                        onChange={(e) =>
+                          setBidInput(Number(e.target.value).toFixed(2))
+                        }
+                        disabled={!!snapshot?.revealed}
+                        className="mt-2 h-2 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-violet-500 disabled:opacity-40"
+                      />
+                    </div>
 
-          <div className="rounded-2xl border border-white/10 bg-black/30 p-5 backdrop-blur-md">
-            <div className="mb-3 flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/20 text-violet-200">
-                <Activity className="h-4 w-4" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="font-semibold text-white">Activity</h3>
-                <p className="text-[10px] uppercase tracking-widest text-slate-500">
-                  on-chain events
-                </p>
-              </div>
-            </div>
-            <ul className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-              {feed.length === 0 ? (
-                <li className="text-xs text-slate-500 px-1 py-3">
-                  Successful actions for this session land here. Open the activity drawer
-                  in the nav for the full feed.
-                </li>
-              ) : (
-                feed.slice(0, 12).map((row) => {
-                  const sigMatch = /tx ([1-9A-HJ-NP-Za-km-z]+)/.exec(row.msg);
-                  return (
-                    <li
-                      key={row.id}
-                      className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-3 text-sm"
-                    >
-                      <p className="text-slate-100 leading-snug">{row.msg}</p>
-                      <p className="mt-1.5 flex items-center gap-2 text-[11px] text-slate-500" suppressHydrationWarning>
-                        <span>{timeAgo(row.ts)}</span>
-                        {sigMatch ? (
-                          <a
-                            href={explorerTxUrl(rpcEndpoint, sigMatch[1])}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-violet-300/80 hover:text-violet-200"
-                          >
-                            explorer <ExternalLink className="h-3 w-3" />
-                          </a>
-                        ) : null}
+                    <div className="mt-3 rounded-lg border border-emerald-500/25 bg-emerald-500/[0.07] px-3 py-2 text-[11px] leading-snug text-slate-300">
+                      <span className="font-semibold text-emerald-300">Typical footprint:</span> one
+                      encrypted bid row plus an MXC finalize callback (explorer confirms both).
+                    </div>
+
+                    <div className="mt-5 space-y-2 rounded-xl border border-white/[0.06] bg-black/30 px-4 py-3 text-sm">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-slate-500">Your cached high</span>
+                        <span className="font-mono font-semibold text-slate-100">
+                          {myHighest != null
+                            ? lamportsToSolDisplayWithSuffix(myHighest)
+                            : "—"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <span className="text-slate-500">MXE status</span>
+                        <span
+                          className={`font-semibold ${
+                            mxePub ? "text-emerald-300" : "text-amber-300"
+                          }`}
+                        >
+                          {rpcReachable === false
+                            ? "RPC offline"
+                            : mxePub
+                              ? "Ready"
+                              : "Loading"}
+                        </span>
+                      </div>
+                      <p className="text-xs font-medium text-emerald-400/90">
+                        Privacy: bid ciphertext only until reveal.
                       </p>
-                    </li>
-                  );
-                })
-              )}
-            </ul>
-          </div>
+                    </div>
 
-          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 text-xs text-slate-400">
-            <h4 className="mb-2 text-sm font-semibold text-violet-200/90">
-              Quick links
-            </h4>
-            <ul className="space-y-2">
-              <li>
-                <Link href="/dashboard" className="inline-flex items-center gap-1 text-slate-200 hover:text-violet-200">
-                  → Your private dashboard
-                </Link>
-              </li>
-              <li>
-                <Link href="/about" className="inline-flex items-center gap-1 text-slate-200 hover:text-violet-200">
-                  → How sealed bids work
-                </Link>
-              </li>
-              <li>
-                <Link href="/auctions" className="inline-flex items-center gap-1 text-slate-200 hover:text-violet-200">
-                  → Browse other auctions
-                </Link>
-              </li>
-            </ul>
+                    <motion.button
+                      type="button"
+                      onClick={() => void onSubmitBid().catch(reportError)}
+                      disabled={
+                        !!busy ||
+                        rpcReachable === false ||
+                        !bidInput.trim() ||
+                        !mxePub ||
+                        !!snapshot?.revealed
+                      }
+                      whileHover={{ scale: 1.01 }}
+                      whileTap={{ scale: 0.99 }}
+                      className="shadow-neon-strong relative mt-5 w-full overflow-hidden rounded-2xl border border-violet-400/30 bg-gradient-to-r from-violet-600 via-fuchsia-600 to-indigo-600 py-3.5 text-base font-bold tracking-wide text-white disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      <span className="relative z-10 flex items-center justify-center gap-2">
+                        {busy?.includes("Encrypting") ? (
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                        ) : (
+                          <Zap className="h-5 w-5" />
+                        )}
+                        {snapshot?.revealed
+                          ? "Auction settled"
+                          : busy || `Commit ${bidInput.trim() || "0"} SOL (sealed)`}
+                      </span>
+                    </motion.button>
+
+                    {!mxePub && rpcReachable === true ? (
+                      <p className="mt-2 text-center text-[11px] text-amber-300/80">
+                        Waiting for MXE pubkey… initialize circuits if this persists.
+                      </p>
+                    ) : null}
+
+                    <p className="mt-3 text-center text-[10px] leading-snug text-slate-500">
+                      Funds are normal Solana lamports for fees and your bid instruction only—always
+                      verify txs in an explorer.
+                    </p>
+
+                    {isAuthority && !snapshot?.revealed ? (
+                      <button
+                        type="button"
+                        disabled={revealing || !mxePub}
+                        onClick={() => void onReveal().catch(reportError)}
+                        className="mt-4 w-full rounded-xl border border-amber-400/40 bg-gradient-to-r from-amber-500/20 via-fuchsia-500/20 to-violet-500/20 py-2.5 text-sm font-semibold text-amber-100 shadow-[0_0_24px_rgba(251,191,36,0.25)] disabled:opacity-50"
+                      >
+                        {revealing ? "Decrypting…" : "Authority: reveal_winner"}
+                      </button>
+                    ) : null}
+                  </>
+                )}
+                </div>
+              </div>
+
+              <div className="glass-panel rounded-2xl p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-violet-200/90">
+                    Shadow Bid · deal details
+                  </h3>
+                  {listingLive ? (
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">
+                      Live
+                    </span>
+                  ) : null}
+                </div>
+                <DealDetailRow label="Listing" value={truncateMid(auctionPda, 12, 12)} />
+                <DealDetailRow label="Auction type" value="Sealed bid (MPC)" />
+                <DealDetailRow
+                  label="Deadline"
+                  value={
+                    snapshot?.biddingEndsAt
+                      ? new Date(snapshot.biddingEndsAt * 1000).toLocaleString()
+                      : "Not locked"
+                  }
+                />
+                <DealDetailRow label="Currency" value="SOL (encrypted bid)" />
+                <DealDetailRow label="Confirmed bids" value={String(bidCount)} />
+                <DealDetailRow label="State nonce" value={snapshot ? truncateMid(snapshot.stateNonce, 6, 6) : "…"} />
+                <div className="mt-4 rounded-xl border border-white/[0.06] bg-black/25 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                    Allocation feel (decorative)
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Two-tone strip like equity deal cards—numbers here are vibe only.
+                  </p>
+                  <div className="mt-3">
+                    <DualSegmentAllocationBar
+                      primaryPct={momentumPct}
+                      primaryLabel={`Pulse · ${momentumPct}%`}
+                      secondaryLabel={`Headroom · ${100 - momentumPct}%`}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <DealStatCard
+                  label="Bids"
+                  value={snapshot ? String(snapshot.bidCount) : "—"}
+                />
+                <DealStatCard
+                  label="Your max"
+                  mono
+                  value={
+                    myHighest != null
+                      ? lamportsToSolDisplayWithSuffix(myHighest)
+                      : "—"
+                  }
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => void copyToClipboard("auction PDA", auctionPda)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 font-medium text-slate-300 hover:border-violet-400/35 hover:text-white"
+                >
+                  {copyFlash === "auction PDA" ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                  Copy PDA
+                </button>
+                {snapshot ? (
+                  <span className="inline-flex items-center gap-1 text-slate-500">
+                    <UserIcon className="h-3.5 w-3.5" />
+                    Synced {timeAgo(snapshot.fetchedAt)}
+                  </span>
+                ) : null}
+              </div>
+            </aside>
           </div>
         </div>
       </div>
@@ -857,34 +1287,23 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
   );
 }
 
-function SnapshotStat({
+function DealStatCard({
   label,
   value,
-  icon: Icon,
   mono,
-  tone = "neutral",
 }: {
   label: string;
   value: string;
-  icon?: typeof Hash;
   mono?: boolean;
-  tone?: "neutral" | "ok" | "warn";
 }) {
-  const toneClasses =
-    tone === "ok"
-      ? "border-emerald-500/30 text-emerald-200"
-      : tone === "warn"
-        ? "border-amber-500/30 text-amber-200"
-        : "border-white/[0.07] text-violet-100";
   return (
-    <div className={`rounded-xl border bg-white/[0.03] p-3 ${toneClasses}`}>
-      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
-        {Icon ? <Icon className="h-3 w-3" /> : null}
-        {label}
-      </div>
-      <div className={`mt-1 text-lg ${mono ? "font-mono" : "font-semibold"}`}>
+    <div className="glass-panel rounded-xl border border-white/[0.06] p-3">
+      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{label}</p>
+      <p
+        className={`mt-1 text-lg font-semibold text-violet-100 ${mono ? "font-mono text-base" : ""}`}
+      >
         {value}
-      </div>
+      </p>
     </div>
   );
 }

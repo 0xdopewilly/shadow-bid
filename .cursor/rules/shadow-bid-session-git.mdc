@@ -1,0 +1,7 @@
+---
+description: After substantive Shadow Bid code changes in-repo, commit and push unless the user explicitly opts out.
+globs: "**/*"
+alwaysApply: false
+---
+
+When you finish a meaningful change set (features, fixes, or notable UI) in this repository, default to **staging, committing with a clear message, and pushing** to the tracked remote branch (usually `main`), unless the user says not to or network/git is unavailable.
