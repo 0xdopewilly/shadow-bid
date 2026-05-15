@@ -120,34 +120,6 @@ function DealDetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** CRAFTS-style split bar: primary segment + remainder (decorative). */
-function DualSegmentAllocationBar({
-  primaryPct,
-  primaryLabel,
-  secondaryLabel,
-}: {
-  primaryPct: number;
-  primaryLabel: string;
-  secondaryLabel: string;
-}) {
-  const w = Math.min(92, Math.max(8, primaryPct));
-  return (
-    <div>
-      <div className="flex h-3.5 w-full overflow-hidden rounded-lg bg-white/[0.06] ring-1 ring-white/[0.06]">
-        <div
-          className="bg-gradient-to-r from-violet-500 to-fuchsia-500 shadow-[0_0_16px_rgba(167,139,250,0.35)] transition-all duration-500"
-          style={{ width: `${w}%` }}
-        />
-        <div className="min-w-0 flex-1 bg-white/[0.04]" />
-      </div>
-      <div className="mt-2 flex justify-between gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-        <span className="text-violet-200/90">{primaryLabel}</span>
-        <span className="text-right text-slate-400">{secondaryLabel}</span>
-      </div>
-    </div>
-  );
-}
-
 export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
   const {
     program,
@@ -545,7 +517,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
 
       <div className="relative pb-20 pt-3 text-slate-100">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-500/40 to-transparent" />
-        <div className="mx-auto max-w-[1440px] px-3 sm:px-5 lg:px-8">
+        <div className="mx-auto w-full max-w-[min(100%,1580px)] px-3 sm:px-5 lg:px-8">
           {listingLive ? (
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center rounded-full border border-fuchsia-400/35 bg-fuchsia-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-fuchsia-100">
@@ -577,9 +549,9 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
             </button>
           </div>
 
-          <div className="mt-6 flex flex-col gap-6 xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(280px,22rem)] xl:items-start xl:gap-8">
-            {/* Main column */}
-            <main className="min-w-0 space-y-5">
+          <div className="mt-6 flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
+            {/* Main column — flex-1 so listing uses horizontal space; rail stays fixed width */}
+            <main className="min-h-0 min-w-0 w-full flex-1 space-y-5">
               <section
                 id="deal-overview"
                 className="overflow-hidden rounded-2xl border border-violet-500/25 bg-black/40 shadow-glass-lg shadow-[0_0_60px_rgba(99,102,241,0.12)]"
@@ -827,10 +799,76 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
                 </motion.div>
               ) : null}
 
+              <section className="glass-panel rounded-2xl p-5">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-violet-200/90">
+                    Deal metadata
+                  </h3>
+                  {listingLive ? (
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">
+                      Live
+                    </span>
+                  ) : null}
+                </div>
+                <div className="grid gap-0 lg:grid-cols-2 lg:gap-x-10">
+                  <div>
+                    <DealDetailRow label="Listing" value={truncateMid(auctionPda, 12, 12)} />
+                    <DealDetailRow label="Auction type" value="Sealed bid (MPC)" />
+                    <DealDetailRow label="Currency" value="SOL (encrypted bid)" />
+                  </div>
+                  <div>
+                    <DealDetailRow label="Confirmed bids" value={String(bidCount)} />
+                    <DealDetailRow
+                      label="State nonce"
+                      value={snapshot ? truncateMid(snapshot.stateNonce, 6, 6) : "…"}
+                    />
+                  </div>
+                </div>
+                <div className="mt-5 flex flex-col gap-3 border-t border-white/[0.06] pt-5 sm:flex-row sm:flex-wrap sm:items-center">
+                  <div className="grid min-w-0 flex-1 grid-cols-2 gap-3 sm:max-w-md">
+                    <DealStatCard
+                      label="Bids"
+                      value={snapshot ? String(snapshot.bidCount) : "—"}
+                    />
+                    <DealStatCard
+                      label="Your max"
+                      mono
+                      value={
+                        myHighest != null
+                          ? lamportsToSolDisplayWithSuffix(myHighest)
+                          : "—"
+                      }
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void copyToClipboard("auction PDA", auctionPda)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-300 hover:border-violet-400/35 hover:text-white"
+                    >
+                      {copyFlash === "auction PDA" ? (
+                        <Check className="h-3.5 w-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                      Copy PDA
+                    </button>
+                    {snapshot ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                        <UserIcon className="h-3.5 w-3.5" />
+                        Synced {timeAgo(snapshot.fetchedAt)}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              </section>
             </main>
 
-            {/* Right column */}
-            <aside id="deal-commit" className="min-w-0 space-y-5 xl:sticky xl:top-24 xl:self-start">
+            {/* Commit + deadline rail */}
+            <aside
+              id="deal-commit"
+              className="min-h-0 min-w-0 w-full shrink-0 space-y-5 lg:sticky lg:top-24 lg:w-[min(100%,380px)] lg:max-w-[380px]"
+            >
               <div className="glass-panel relative overflow-hidden rounded-2xl border-glow p-5 shadow-glass-lg">
                 <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-fuchsia-600/20 blur-3xl" />
                 <div className="pointer-events-none absolute -bottom-12 -left-12 h-36 w-36 rounded-full bg-violet-600/20 blur-3xl" />
@@ -1037,76 +1075,6 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
                   })
                 }
               />
-
-              <div className="glass-panel rounded-2xl p-5">
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-violet-200/90">
-                    Shadow Bid · deal details
-                  </h3>
-                  {listingLive ? (
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">
-                      Live
-                    </span>
-                  ) : null}
-                </div>
-                <DealDetailRow label="Listing" value={truncateMid(auctionPda, 12, 12)} />
-                <DealDetailRow label="Auction type" value="Sealed bid (MPC)" />
-                <DealDetailRow label="Currency" value="SOL (encrypted bid)" />
-                <DealDetailRow label="Confirmed bids" value={String(bidCount)} />
-                <DealDetailRow label="State nonce" value={snapshot ? truncateMid(snapshot.stateNonce, 6, 6) : "…"} />
-                <div className="mt-4 rounded-xl border border-white/[0.06] bg-black/25 p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                    Allocation feel (decorative)
-                  </p>
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    Two-tone strip like equity deal cards—numbers here are vibe only.
-                  </p>
-                  <div className="mt-3">
-                    <DualSegmentAllocationBar
-                      primaryPct={momentumPct}
-                      primaryLabel={`Pulse · ${momentumPct}%`}
-                      secondaryLabel={`Headroom · ${100 - momentumPct}%`}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <DealStatCard
-                  label="Bids"
-                  value={snapshot ? String(snapshot.bidCount) : "—"}
-                />
-                <DealStatCard
-                  label="Your max"
-                  mono
-                  value={
-                    myHighest != null
-                      ? lamportsToSolDisplayWithSuffix(myHighest)
-                      : "—"
-                  }
-                />
-              </div>
-
-              <div className="flex flex-wrap gap-2 text-xs">
-                <button
-                  type="button"
-                  onClick={() => void copyToClipboard("auction PDA", auctionPda)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 font-medium text-slate-300 hover:border-violet-400/35 hover:text-white"
-                >
-                  {copyFlash === "auction PDA" ? (
-                    <Check className="h-3.5 w-3.5 text-emerald-400" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                  Copy PDA
-                </button>
-                {snapshot ? (
-                  <span className="inline-flex items-center gap-1 text-slate-500">
-                    <UserIcon className="h-3.5 w-3.5" />
-                    Synced {timeAgo(snapshot.fetchedAt)}
-                  </span>
-                ) : null}
-              </div>
             </aside>
           </div>
 
