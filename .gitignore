@@ -11,3 +11,6 @@ encrypted-ixs/src/main.rs
 artifacts/
 # Local-only: set AIRDROP_TO for scripts/dev.sh (see .env.dev.example)
 .env.dev
+
+# Cursor IDE — keep automation hints local, off GitHub
+.cursor/
