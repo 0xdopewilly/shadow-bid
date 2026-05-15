@@ -508,11 +508,10 @@ export async function reclaimComputationRent(
 }
 
 /**
- * Authority-only: queue the reveal_winner Arcium computation, then await
- * finalization. The callback writes `revealed/winner/winning_bid` onto the
- * Auction account and emits `WinnerRevealedEvent`.
+ * Authority-only: submit reveal_winner — queues the Arcium computation (wallet tx).
+ * Pair with {@link awaitRevealWinnerFinalized} so the UI can unblock after RPC lands.
  */
-export async function revealWinnerFlow(
+export async function revealWinnerSubmitTx(
   program: ShadowBidProgram,
   provider: anchor.AnchorProvider,
   clusterOffset: number,
@@ -542,13 +541,47 @@ export async function revealWinnerFlow(
     })
     .rpc({ commitment: "confirmed", skipPreflight: true });
 
+  return { txSig, computationOffset };
+}
+
+/** After {@link revealWinnerSubmitTx}, wait for MXC callback onto the auction account. */
+export async function awaitRevealWinnerFinalized(
+  provider: anchor.AnchorProvider,
+  computationOffset: anchor.BN,
+  programId: PublicKey
+): Promise<void> {
   await awaitComputationFinalizationResilient(
     provider,
     computationOffset,
+    programId
+  );
+}
+
+/**
+ * Authority-only: queue the reveal_winner Arcium computation, then await
+ * finalization. The callback writes `revealed/winner/winning_bid` onto the
+ * Auction account and emits `WinnerRevealedEvent`.
+ */
+export async function revealWinnerFlow(
+  program: ShadowBidProgram,
+  provider: anchor.AnchorProvider,
+  clusterOffset: number,
+  authority: PublicKey,
+  auction: PublicKey
+): Promise<{ txSig: string; computationOffset: anchor.BN }> {
+  const out = await revealWinnerSubmitTx(
+    program,
+    provider,
+    clusterOffset,
+    authority,
+    auction
+  );
+  await awaitRevealWinnerFinalized(
+    provider,
+    out.computationOffset,
     program.programId
   );
-
-  return { txSig, computationOffset };
+  return out;
 }
 
 export type AuctionAccountData = {

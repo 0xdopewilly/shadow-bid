@@ -15,7 +15,8 @@ import {
   fetchAuctionAccount,
   listingImageSrc,
   placeBidFlow,
-  revealWinnerFlow,
+  revealWinnerSubmitTx,
+  awaitRevealWinnerFinalized,
   setAuctionDeadlineFlow,
   waitForAuctionBidCountAbove,
 } from "@/lib/shadow-bid/flows";
@@ -154,7 +155,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
   const [bidInput, setBidInput] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [revealOpen, setRevealOpen] = useState(false);
-  const [revealing, setRevealing] = useState(false);
+  const [revealUiPhase, setRevealUiPhase] = useState<"idle" | "submit" | "mxe">("idle");
   const lastSeenBidCount = useRef<number | null>(null);
 
   const biddingDeadlineSec =
@@ -207,6 +208,12 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
     const t = setInterval(() => void refresh(), 5500);
     return () => clearInterval(t);
   }, [refresh]);
+
+  useEffect(() => {
+    if (revealUiPhase !== "mxe") return;
+    const id = window.setInterval(() => void refresh(), 4000);
+    return () => window.clearInterval(id);
+  }, [revealUiPhase, refresh]);
 
   useEffect(() => {
     if (!snapshot) {
@@ -412,21 +419,59 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
   const onReveal = useCallback(async () => {
     if (!program || !provider || !publicKey || !auctionKey)
       throw new Error("Wallet + auction required");
-    setRevealing(true);
+
+    const MXE_WAIT_MS = 6 * 60 * 1000;
+
+    setRevealUiPhase("submit");
     setBusy("Queuing reveal…");
+    let computationOffset: anchor.BN | null = null;
     try {
-      const { txSig } = await revealWinnerFlow(
+      const out = await revealWinnerSubmitTx(
         program,
         provider,
         clusterOffset,
         publicKey,
         auctionKey
       );
-      pushFeed(`reveal_winner finalized · tx ${truncateMid(txSig, 6, 6)}`, true);
+      computationOffset = out.computationOffset;
+      pushFeed(`reveal_winner tx · ${truncateMid(out.txSig, 6, 6)}`, true);
+      pushToast({
+        kind: "info",
+        title: "Reveal transaction landed",
+        body: "Waiting for MXC to finalize — often 1–3 minutes.",
+      });
+    } catch (e) {
+      reportError(e);
+      setRevealUiPhase("idle");
+      return;
+    } finally {
+      setBusy(null);
+    }
+
+    setRevealUiPhase("mxe");
+    try {
+      await Promise.race([
+        awaitRevealWinnerFinalized(
+          provider,
+          computationOffset!,
+          program.programId
+        ),
+        new Promise<never>((_, rej) =>
+          setTimeout(
+            () =>
+              rej(
+                new Error(
+                  "MXE finalization is taking longer than expected. Check Solana Explorer for your reveal transaction — the auction may still update when MXC completes."
+                )
+              ),
+            MXE_WAIT_MS
+          )
+        ),
+      ]);
       pushToast({
         kind: "info",
         title: "Reveal finalized",
-        body: `Winner + amount written on-chain (${truncateMid(txSig, 6, 6)}…). Refreshing.`,
+        body: "Refreshing auction account…",
       });
       await refresh();
       await new Promise((r) => setTimeout(r, 1500));
@@ -437,12 +482,22 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
           kind: "warn",
           title: "Auction still sealed on RPC",
           body:
-            "The reveal tx finalized but accounts still show sealed — RPC lag or a failed MXC callback. Check Solana Explorer and cluster offset env.",
+            "MXE callback may be delayed or failed. Confirm NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET matches arcium deploy.",
         });
       }
+    } catch (e) {
+      reportError(e);
+      pushToast({
+        kind: "warn",
+        title: "Reveal still pending?",
+        body:
+          e instanceof Error
+            ? e.message
+            : "Refresh this page in a minute or check Solana Explorer.",
+      });
     } finally {
-      setBusy(null);
-      setRevealing(false);
+      setRevealUiPhase("idle");
+      void refresh();
     }
   }, [
     program,
@@ -453,6 +508,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
     pushFeed,
     pushToast,
     refresh,
+    reportError,
   ]);
 
   if (!auctionKey) {
@@ -510,7 +566,8 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
         winnerB58={snapshot?.revealed ? snapshot.winnerB58 : null}
         winningBidLamports={snapshot?.revealed ? snapshot.winningBidLamports : null}
         mxeReady={!!mxePub && rpcReachable === true}
-        triggering={revealing}
+        triggering={revealUiPhase !== "idle"}
+        triggerPhase={revealUiPhase === "idle" ? undefined : revealUiPhase}
         arciumClusterMisconfigured={arciumClusterMisconfigured}
         onTriggerReveal={() => void onReveal().catch(reportError)}
       />

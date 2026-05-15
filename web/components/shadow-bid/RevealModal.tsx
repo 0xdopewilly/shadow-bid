@@ -24,8 +24,10 @@ interface Props {
   winningBidLamports: string | null;
   /** Auth-only: trigger the on-chain reveal_winner Arcium computation. */
   onTriggerReveal?: () => void;
-  /** True while the on-chain reveal call is in flight. */
+  /** True while reveal is in progress (wallet tx and/or MXC wait). */
   triggering?: boolean;
+  /** Distinguishes submit vs MXC wait for button copy. */
+  triggerPhase?: "submit" | "mxe";
   /** Whether MXE is ready (so the trigger button can enable). */
   mxeReady?: boolean;
   /** True when NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET is 0 against a hosted RPC (almost always wrong vs deploy `-o`). */
@@ -55,6 +57,7 @@ export function RevealModal({
   winningBidLamports,
   onTriggerReveal,
   triggering,
+  triggerPhase,
   mxeReady = true,
   arciumClusterMisconfigured = false,
 }: Props) {
@@ -265,7 +268,9 @@ export function RevealModal({
                 {triggering ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Decrypting on-chain…
+                    {triggerPhase === "mxe"
+                      ? "Waiting for MXC…"
+                      : "Submitting reveal…"}
                   </>
                 ) : (
                   <>
