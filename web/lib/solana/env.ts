@@ -24,7 +24,7 @@ export function getRpcEndpoint(): string {
 export function getShadowBidProgramId(): PublicKey {
   const id = process.env.NEXT_PUBLIC_SHADOW_BID_PROGRAM_ID;
   if (!id) {
-    return new PublicKey("EvyVpkAWdKABJAZZ73YkMwGiVS3QJMEJ7vHvKh6FYuBt");
+    return new PublicKey("J1vKHNDu4gLpMrf4Zwzca74rjJo4Lx5MvgKUU7B7UWN7");
   }
   return new PublicKey(id);
 }

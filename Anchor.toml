@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-shadow_bid = "EvyVpkAWdKABJAZZ73YkMwGiVS3QJMEJ7vHvKh6FYuBt"
+shadow_bid = "J1vKHNDu4gLpMrf4Zwzca74rjJo4Lx5MvgKUU7B7UWN7"
 
 [registry]
 url = "https://api.apr.dev"

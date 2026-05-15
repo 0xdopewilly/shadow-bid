@@ -12,7 +12,7 @@ const ENCRYPTED_STATE_OFFSET: u32 = 61;
 /// MXE state is 3 scalars: u64 + u128 + u128 (`SerializedSolanaPublicKey`).
 const ENCRYPTED_STATE_SIZE: u32 = 3 * 32;
 
-declare_id!("EvyVpkAWdKABJAZZ73YkMwGiVS3QJMEJ7vHvKh6FYuBt");
+declare_id!("J1vKHNDu4gLpMrf4Zwzca74rjJo4Lx5MvgKUU7B7UWN7");
 
 #[arcium_program]
 pub mod shadow_bid {

@@ -114,7 +114,7 @@ Canonical **demo / reference** identifiers for this checkout (change if you rede
 
 | Setting | Reference value |
 |---------|----------------|
-| **`NEXT_PUBLIC_SHADOW_BID_PROGRAM_ID`** | `EvyVpkAWdKABJAZZ73YkMwGiVS3QJMEJ7vHvKh6FYuBt` |
+| **`NEXT_PUBLIC_SHADOW_BID_PROGRAM_ID`** | `J1vKHNDu4gLpMrf4Zwzca74rjJo4Lx5MvgKUU7B7UWN7` |
 | **`NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET` (Devnet)** | **`456`** (see `Arcium.toml` `[clusters.devnet]` — use **`0` only for local `arcium localnet`**). |
 
 Mirror these in **`web/.env.local`** for local previews and **Vercel → Environment Variables**.
