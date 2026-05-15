@@ -317,7 +317,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
     } catch {
       countBefore = snapshot?.bidCount ?? 0;
     }
-    setBusy("Encrypting & sending sealed bid…");
+      setBusy("Sending sealed bid…");
     try {
       const { txSig, computationOffset } = await placeBidFlow(
         program,
@@ -343,7 +343,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
         body: "Watching on-chain bid_count until Arcium finalizes…",
       });
       setBidInput("");
-      setBusy("Awaiting MXC finalization (up to ~3 min)…");
+      setBusy("Waiting for MXE…");
       const raised = await waitForAuctionBidCountAbove(
         program,
         auctionKey,
@@ -413,7 +413,7 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
     if (!program || !provider || !publicKey || !auctionKey)
       throw new Error("Wallet + auction required");
     setRevealing(true);
-    setBusy("Queuing reveal_winner Arcium computation…");
+    setBusy("Queuing reveal…");
     try {
       const { txSig } = await revealWinnerFlow(
         program,
@@ -1020,39 +1020,42 @@ export function AuctionDetailPage({ auctionPda }: { auctionPda: string }) {
                         !mxePub ||
                         !!snapshot?.revealed
                       }
-                      whileHover={{ scale: 1.01 }}
-                      whileTap={{ scale: 0.99 }}
-                      className="shadow-neon-strong relative mt-5 w-full overflow-hidden rounded-2xl border border-violet-400/30 bg-gradient-to-r from-violet-600 via-fuchsia-600 to-indigo-600 py-3.5 text-base font-bold tracking-wide text-white disabled:cursor-not-allowed disabled:opacity-45"
+                      whileHover={{ scale: busy ? 1 : 1.01 }}
+                      whileTap={{ scale: busy ? 1 : 0.99 }}
+                      className="shadow-neon-strong relative mt-5 min-h-[3rem] w-full overflow-hidden rounded-2xl border border-violet-400/30 bg-gradient-to-r from-violet-600 via-fuchsia-600 to-indigo-600 px-4 py-3 text-sm font-semibold leading-snug tracking-normal text-white disabled:cursor-not-allowed disabled:opacity-45 sm:min-h-0 sm:py-3.5 sm:text-[15px]"
                     >
-                      <span className="relative z-10 flex items-center justify-center gap-2">
-                        {busy?.includes("Encrypting") ? (
-                          <Loader2 className="h-5 w-5 animate-spin" />
+                      <span className="relative z-10 inline-flex w-full items-center justify-center gap-2 text-center">
+                        {busy ? (
+                          <Loader2 className="h-4 w-4 shrink-0 animate-spin sm:h-[1.125rem] sm:w-[1.125rem]" />
                         ) : (
-                          <Zap className="h-5 w-5" />
+                          <Zap className="h-4 w-4 shrink-0 sm:h-5 sm:w-5" />
                         )}
-                        {snapshot?.revealed
-                          ? "Auction settled"
-                          : busy || `Commit ${bidInput.trim() || "0"} SOL (sealed)`}
+                        <span className="min-w-0 break-words">
+                          {snapshot?.revealed
+                            ? "Auction settled"
+                            : busy ?? `Commit ${bidInput.trim() || "0"} SOL (sealed)`}
+                        </span>
                       </span>
                     </motion.button>
 
                     {!mxePub && rpcReachable === true ? (
-                      <p className="mt-2 text-center text-[11px] text-amber-300/80">
+                      <p className="mt-2 text-center text-[11px] leading-snug text-amber-300/80">
                         Waiting for MXE pubkey… initialize circuits if this persists.
                       </p>
                     ) : null}
 
-                    <p className="mt-3 text-center text-[10px] leading-snug text-slate-500">
-                      Fees + bid instruction only — verify txs in an explorer.
+                    <p className="mt-3 text-center text-[11px] leading-relaxed text-slate-500">
+                      Fees cover network fees and your bid instruction. Check transactions in an
+                      explorer.
                       {isAuthority && !snapshot?.revealed ? (
                         <>
                           {" "}
                           <button
                             type="button"
                             onClick={() => setRevealOpen(true)}
-                            className="font-semibold text-amber-200/90 underline decoration-amber-400/40 underline-offset-2 hover:text-amber-100"
+                            className="text-amber-200/95 underline decoration-amber-400/35 underline-offset-2 hover:text-amber-100"
                           >
-                            Authority reveal flow
+                            Authority reveal
                           </button>
                           .
                         </>
