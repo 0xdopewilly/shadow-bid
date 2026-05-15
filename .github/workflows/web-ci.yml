@@ -18,6 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Verify Arcium / IDL / CI env alignment
+        # Job default working-directory is `web`; script lives at repo root `scripts/`.
+        working-directory: ${{ github.workspace }}
         run: node scripts/check-config-alignment.mjs
       - uses: actions/setup-node@v4
         with:
